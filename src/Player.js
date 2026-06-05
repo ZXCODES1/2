@@ -46,6 +46,10 @@ export class Player {
 
     this.dead          = false;
     this._dying        = false;
+
+    // Speed afterimage trail
+    this._ghosts       = [];
+    this._ghostTimer   = 0;
   }
 
   hurt(game) {
@@ -222,6 +226,17 @@ export class Player {
     } else {
       this._animFrame = 0;
     }
+
+    // Speed afterimage trail — spawn ghosts when moving fast
+    if (Math.abs(this.vx) > PLAYER_SPEED * 0.82) {
+      this._ghostTimer -= dt;
+      if (this._ghostTimer <= 0) {
+        this._ghostTimer = 0.045;
+        this._ghosts.push({ x: this.x, y: this.y, life: 0.28, max: 0.28 });
+      }
+    }
+    for (const g of this._ghosts) g.life -= dt;
+    this._ghosts = this._ghosts.filter(g => g.life > 0);
   }
 
   _resolveX(level) {
@@ -309,6 +324,17 @@ export class Player {
       this._renderDying(ctx);
       return;
     }
+
+    // Speed afterimages (drawn behind the body)
+    for (const g of this._ghosts) {
+      const a = (g.life / g.max) * 0.4;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#00ddff';
+      ctx.beginPath();
+      ctx.roundRect(g.x + 2, g.y + 8, this.w - 4, this.h - 14, 8);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
     // Invincibility blink
     if (this.invincible && Math.floor(this._hurtFlash * 12) % 2 === 0) return;

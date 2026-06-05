@@ -4,6 +4,11 @@
   "description": "Nebula Dash – original sci-fi platformer",
   "scripts": {
     "dev": "npx serve . --listen 3000 --no-clipboard",
-    "start": "npx serve . --listen 3000 --no-clipboard"
+    "start": "npx serve . --listen 3000 --no-clipboard",
+    "build": "node tools/build.mjs",
+    "smoke": "node tools/build.mjs && node tools/smoke.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.0"
   }
 }

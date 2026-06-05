@@ -55,6 +55,8 @@ export class Boss {
     game.score += SC_BOSS_HIT;
     game.audio.bossHit();
     game.camera.shake(8);
+    game.hitStop(0.04);
+    game.flash('#ff6622', 0.12);
     game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff4400', 10);
 
     // Phase transition
@@ -62,6 +64,8 @@ export class Boss {
     if (newPhase !== this.phase) {
       this.phase = newPhase;
       game.camera.shake(18);
+      game.hitStop(0.12);
+      game.flash('#ffaa33', 0.4);
       game.audio.explosion();
       game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff8800', 30);
     }
@@ -73,6 +77,8 @@ export class Boss {
     this.dead = true;
     game.audio.explosion();
     game.camera.shake(20);
+    game.hitStop(0.3);
+    game.flash('#ffffff', 0.7);
     for (let i = 0; i < 4; i++) {
       setTimeout(() => {
         game.particles.explosion(

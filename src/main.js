@@ -18,6 +18,8 @@ window.addEventListener('resize', resize);
 
 // ── Game loop ─────────────────────────────────────────────────────────────
 const game = new Game(canvas);
+// Expose for debugging / automated smoke tests
+if (typeof window !== 'undefined') window.NebulaGame = game;
 
 let lastTime = 0;
 const MAX_DT  = 1 / 30; // cap delta at ~30fps to prevent spiral of death

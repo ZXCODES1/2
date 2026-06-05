@@ -31,10 +31,14 @@ class Enemy {
 
   _die(game) {
     this.dead = true;
-    game.score += SC_SHOOT;
+    const cx = this.x + this.w / 2;
+    const cy = this.y + this.h / 2;
+    // Stomp kills score higher than shots
+    const base = this._stomped ? SC_STOMP : SC_SHOOT;
+    game.addKill(base, cx, cy - 20, this._deathColor());
     game.audio.enemyDie();
-    game.particles.explosion(this.x + this.w/2, this.y + this.h/2, this._deathColor(), 18);
-    game.camera.shake(6);
+    game.particles.explosion(cx, cy, this._deathColor(), 18);
+    game.camera.shake(7);
   }
 
   _deathColor() { return '#ff6600'; }
@@ -80,8 +84,9 @@ class Enemy {
 
     // Stomp: player falling + feet above enemy mid
     if (p.vy > 0 && p.y + p.h < this.y + this.h * 0.6) {
+      this._stomped = true;          // flag so _die awards stomp score
       this.takeDamage(1, game);
-      if (this.hp <= 0) game.score += SC_STOMP - SC_SHOOT; // bonus
+      this._stomped = false;
       p.stompBounce();
       game.audio.stomp();
       game.camera.shake(5);

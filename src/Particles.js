@@ -152,6 +152,17 @@ export class ParticleSystem {
     ));
   }
 
+  // Slow drifting ambient mote for atmosphere
+  ambientMote(x, y) {
+    this._add(new Particle(
+      x, y,
+      rnd(-14, 14), rnd(-26, -8),
+      rnd(2.0, 4.0), rnd(2, 5),
+      `hsl(${rndInt(180, 210)},85%,72%)`,
+      'behind', 0
+    ));
+  }
+
   bossSmoke(x, y) {
     for (let i = 0; i < 6; i++) {
       this._add(new Particle(

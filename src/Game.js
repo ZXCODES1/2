@@ -43,6 +43,34 @@ export class Game {
 
     this._bossIntroTimer = 0;
     this._wonLevel = false;
+
+    // ── Juice state ──────────────────────────────────────────────
+    this._hitStop   = 0;        // freeze-frame timer (seconds)
+    this._flashAlpha = 0;       // full-screen flash alpha
+    this._flashColor = '#ffffff';
+    this.combo       = 0;       // kill combo multiplier
+    this._comboTimer = 0;       // time left before combo resets
+    this.floaters    = [];      // floating score popups
+    this._ambientTimer = 0;     // ambient particle spawn timer
+  }
+
+  // ── Juice helpers ──────────────────────────────────────────────
+  hitStop(t)        { this._hitStop = Math.max(this._hitStop, t); }
+  flash(color, a)   { this._flashColor = color; this._flashAlpha = Math.max(this._flashAlpha, a); }
+  addFloater(x, y, text, color) {
+    this.floaters.push({ x, y, text, color, life: 0.9, max: 0.9 });
+    if (this.floaters.length > 40) this.floaters.shift();
+  }
+
+  // Register a kill: applies combo multiplier, score, popup, juice
+  addKill(base, x, y, color) {
+    this.combo = Math.min(this.combo + 1, 99);
+    this._comboTimer = 2.5;
+    const pts = base * this.combo;
+    this.score += pts;
+    this.addFloater(x, y, (this.combo > 1 ? `x${this.combo} ` : '') + `+${pts}`, color);
+    this.hitStop(0.06);
+    this.flash(color, 0.22);
   }
 
   _ensureAudio() {
@@ -84,6 +112,11 @@ export class Game {
 
     this.particles = new ParticleSystem();
     this._wonLevel = false;
+    this.floaters  = [];
+    this.combo     = 0;
+    this._comboTimer = 0;
+    this._hitStop  = 0;
+    this._flashAlpha = 0;
 
     // If boss level, show intro sequence then start music
     if (boss) {
@@ -103,6 +136,9 @@ export class Game {
   update(dt) {
     const inp = this.input;
     this._time += dt;
+
+    // Flash always decays so it fades even on game-over/win
+    if (this._flashAlpha > 0) this._flashAlpha = Math.max(0, this._flashAlpha - dt * 5);
 
     this.ui.update(dt, this);
 
@@ -156,6 +192,34 @@ export class Game {
 
   _updatePlaying(dt) {
     const level = this.level;
+
+    // Hit-stop: freeze the world briefly for punchy impacts.
+    // Camera keeps updating so screen-shake still animates.
+    if (this._hitStop > 0) {
+      this._hitStop -= dt;
+      this.camera.update(dt);
+      return;
+    }
+
+    // Combo decay
+    if (this._comboTimer > 0) {
+      this._comboTimer -= dt;
+      if (this._comboTimer <= 0) this.combo = 0;
+    }
+
+    // Floating score popups
+    for (const f of this.floaters) { f.y -= 45 * dt; f.life -= dt; }
+    this.floaters = this.floaters.filter(f => f.life > 0);
+
+    // Ambient drifting motes within the camera view
+    this._ambientTimer -= dt;
+    if (this._ambientTimer <= 0) {
+      this._ambientTimer = 0.12;
+      this.particles.ambientMote(
+        this.camera.x + Math.random() * W,
+        this.camera.y + Math.random() * H
+      );
+    }
 
     // Update level (moving platforms)
     level.update(dt);
@@ -308,7 +372,38 @@ export class Game {
     // Particles (front)
     this.particles.renderFront(ctx);
 
+    // Floating score popups (world space, above everything)
+    for (const f of this.floaters) {
+      const a = Math.min(f.life / f.max, 1);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = f.color;
+      ctx.font = 'bold 16px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 4;
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
+
+    // ── Post-processing (screen space) ───────────────────────────
+    // Vignette for depth
+    const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.78);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,12,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Impact flash
+    if (this._flashAlpha > 0) {
+      ctx.globalAlpha = this._flashAlpha;
+      ctx.fillStyle = this._flashColor;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
 
     // UI overlay (screen space)
     this.ui.render(ctx, this);

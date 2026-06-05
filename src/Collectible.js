@@ -18,6 +18,7 @@ export class Crystal {
       game.score += SC_CRYSTAL;
       game.audio.collectCrystal();
       game.particles.crystalSpark(this.x + this.w / 2, this.y + this.h / 2);
+      game.addFloater(this.x + this.w / 2, this.y - 6, `+${SC_CRYSTAL}`, '#00ffcc');
       this.dead = true;
     }
   }

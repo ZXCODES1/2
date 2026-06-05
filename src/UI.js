@@ -73,6 +73,25 @@ export class UI {
       ctx.fillRect(W - 120, 24, 106 * Math.min(frac, 1), 6);
     }
 
+    // Combo multiplier
+    if (game.combo > 1 && game._comboTimer > 0) {
+      const a = Math.min(game._comboTimer / 0.6, 1);
+      const pop = 1 + Math.max(0, (game._comboTimer - 2.3) * 2); // brief pop on gain
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.translate(W / 2, 72);
+      ctx.scale(pop, pop);
+      ctx.fillStyle = `hsl(${Math.min(40 + game.combo * 10, 140)},100%,60%)`;
+      ctx.font = 'bold 24px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 6;
+      ctx.fillText(`COMBO  x${game.combo}`, 0, 0);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+
     // Controls hint (first 5 seconds)
     if (game._hintTimer > 0) {
       ctx.globalAlpha = Math.min(game._hintTimer, 1);
