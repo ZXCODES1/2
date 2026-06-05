@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Nebula Dash</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #touch-controls {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      display: none;
+      padding: 12px 20px 20px;
+      justify-content: space-between;
+      align-items: flex-end;
+      pointer-events: none;
+      z-index: 100;
+    }
+    @media (pointer: coarse) { #touch-controls { display: flex; } }
+    .tc-group { display: flex; gap: 6px; align-items: center; }
+    .tc-btn {
+      width: 64px; height: 64px;
+      background: rgba(0, 200, 255, 0.18);
+      border: 2px solid rgba(0, 200, 255, 0.45);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(0,220,255,0.9);
+      font-size: 22px;
+      font-family: sans-serif;
+      pointer-events: auto;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      backdrop-filter: blur(2px);
+    }
+    .tc-btn:active { background: rgba(0,200,255,0.38); }
+    #btn-jump { width: 72px; height: 72px; font-size: 26px; border-color: rgba(255,200,0,0.5); color: rgba(255,220,0,0.9); background: rgba(255,180,0,0.14); }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="touch-controls">
+    <div class="tc-group">
+      <div class="tc-btn" id="btn-left">◀</div>
+      <div class="tc-btn" id="btn-right">▶</div>
+    </div>
+    <div class="tc-group">
+      <div class="tc-btn" id="btn-shoot">⚡</div>
+      <div class="tc-btn" id="btn-jump" id="btn-jump">▲</div>
+    </div>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

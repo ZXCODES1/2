@@ -1,0 +1,9 @@
+{
+  "name": "nebula-dash",
+  "version": "1.0.0",
+  "description": "Nebula Dash – original sci-fi platformer",
+  "scripts": {
+    "dev": "npx serve . --listen 3000 --no-clipboard",
+    "start": "npx serve . --listen 3000 --no-clipboard"
+  }
+}
