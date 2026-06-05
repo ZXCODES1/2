@@ -42,6 +42,7 @@ export class Input {
     this._released = {};
     this._jumpTap  = false;
     this._shootTap = false;
+    this._confirmTap = false;
   }
 
   isDown(code)    { return !!this._keys[code]; }
@@ -59,5 +60,5 @@ export class Input {
   shootPressed(){ return this.wasPressed('KeyZ') || this.wasPressed('KeyJ') || this.wasPressed('ControlLeft') || this._shootTap; }
 
   pause() { return this.wasPressed('Escape') || this.wasPressed('KeyP'); }
-  confirm(){ return this.wasPressed('Enter') || this.wasPressed('Space') || this.wasPressed('KeyZ') || this._jumpTap || this._shootTap; }
+  confirm(){ return this.wasPressed('Enter') || this.wasPressed('Space') || this.wasPressed('KeyZ') || this._jumpTap || this._shootTap || this._confirmTap; }
 }

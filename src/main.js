@@ -15,11 +15,21 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 100));
 
 // ── Game loop ─────────────────────────────────────────────────────────────
 const game = new Game(canvas);
 // Expose for debugging / automated smoke tests
 if (typeof window !== 'undefined') window.NebulaGame = game;
+
+// On touch devices, tapping anywhere on a menu/result screen confirms.
+// (During play, the on-screen buttons handle input instead.)
+canvas.addEventListener('touchstart', e => {
+  if (game.state !== 'playing' && game.state !== 'paused') {
+    game.input._confirmTap = true;
+    e.preventDefault();
+  }
+}, { passive: false });
 
 let lastTime = 0;
 const MAX_DT  = 1 / 30; // cap delta at ~30fps to prevent spiral of death
