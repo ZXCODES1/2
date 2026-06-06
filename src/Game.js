@@ -1,4 +1,5 @@
 import { W, H, T, PLAYER_LIVES } from './constants.js';
+import { loadCheckpoint, clearCheckpoint } from './Checkpoint.js';
 import { Input }    from './Input.js';
 import { Audio }    from './Audio.js';
 import { Camera }   from './Camera.js';
@@ -31,6 +32,7 @@ export class Game {
     this.projectiles  = [];
     this.collectibles = [];
     this.boss         = null;
+    this.checkpoints  = [];
 
     this._spawnX   = 0;
     this._spawnY   = 0;
@@ -45,13 +47,14 @@ export class Game {
     this._wonLevel = false;
 
     // ── Juice state ──────────────────────────────────────────────
-    this._hitStop   = 0;        // freeze-frame timer (seconds)
-    this._flashAlpha = 0;       // full-screen flash alpha
+    this._hitStop    = 0;
+    this._flashAlpha = 0;
     this._flashColor = '#ffffff';
-    this.combo       = 0;       // kill combo multiplier
-    this._comboTimer = 0;       // time left before combo resets
-    this.floaters    = [];      // floating score popups
-    this._ambientTimer = 0;     // ambient particle spawn timer
+    this.combo       = 0;
+    this._comboTimer = 0;
+    this.floaters    = [];
+    this._ambientTimer = 0;
+    this._slowMo     = 1.0;    // slow-motion multiplier (1 = normal)
   }
 
   // ── Juice helpers ──────────────────────────────────────────────
@@ -82,22 +85,35 @@ export class Game {
   }
 
   start() {
-    this.lives = PLAYER_LIVES;
-    this.score = 0;
-    this.currentLevelIndex = 0;
-    this.audio.stopMusic();
-    this._loadLevel(0);   // sets state to 'playing' (or 'bossIntro' for boss levels)
-    this.state = 'playing';
+    // Check for saved checkpoint
+    const cp = loadCheckpoint();
+    if (cp && cp.levelIndex < ALL_LEVELS.length) {
+      this.lives = cp.lives || PLAYER_LIVES;
+      this.score = cp.score || 0;
+      this.currentLevelIndex = cp.levelIndex;
+      this.audio.stopMusic();
+      this._loadLevel(cp.levelIndex);
+      this.state = 'playing';
+    } else {
+      this.lives = PLAYER_LIVES;
+      this.score = 0;
+      this.currentLevelIndex = 0;
+      this.audio.stopMusic();
+      this._loadLevel(0);
+      this.state = 'playing';
+    }
     this._hintTimer = 8;
+    this._slowMo = 1.0;
   }
 
   _loadLevel(index) {
     const data = ALL_LEVELS[index];
     this.level  = new Level(data);
-    const { enemies, collectibles, boss } = Level.buildEntities(data);
+    const { enemies, collectibles, boss, checkpoints } = Level.buildEntities(data);
     this.enemies      = enemies;
     this.collectibles = collectibles;
     this.boss         = boss;
+    this.checkpoints  = checkpoints;
     this.projectiles  = [];
 
     const sp = data.playerStart;
@@ -193,8 +209,13 @@ export class Game {
   _updatePlaying(dt) {
     const level = this.level;
 
+    // Slow-motion: recover back toward 1.0 over ~2s
+    if (this._slowMo < 1.0) {
+      this._slowMo = Math.min(1.0, this._slowMo + dt * 0.5);
+    }
+    dt *= this._slowMo;
+
     // Hit-stop: freeze the world briefly for punchy impacts.
-    // Camera keeps updating so screen-shake still animates.
     if (this._hitStop > 0) {
       this._hitStop -= dt;
       this.camera.update(dt);
@@ -257,6 +278,9 @@ export class Game {
       if (!c.dead) c.update(dt, this);
     }
     this.collectibles = this.collectibles.filter(c => !c.dead);
+
+    // Checkpoints
+    for (const cp of this.checkpoints) cp.update(dt, this);
 
     // Particles
     this.particles.update(dt);
@@ -322,6 +346,7 @@ export class Game {
 
   triggerWin() {
     this._wonLevel = true;
+    clearCheckpoint(); // game beaten — wipe the save
     setTimeout(() => {
       this.state = 'win';
       this.audio.stopMusic();
@@ -350,6 +375,9 @@ export class Game {
 
     // Level tiles
     this.level.render(ctx, cam);
+
+    // Checkpoints (behind everything)
+    for (const cp of this.checkpoints) cp.render(ctx);
 
     // Collectibles
     for (const c of this.collectibles) if (!c.dead) c.render(ctx);

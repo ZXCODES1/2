@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORDER = [
   'constants', 'utils', 'Input', 'Audio', 'Camera', 'Particles',
   'Background', 'Projectile', 'Collectible', 'Enemy', 'Boss',
-  'Player', 'Level', 'LevelData', 'UI', 'Game', 'main',
+  'Player', 'Checkpoint', 'Level', 'LevelData', 'UI', 'Game', 'main',
 ];
 
 function strip(code) {

@@ -41,6 +41,11 @@ const SC_STOMP   = 100;
 const SC_SHOOT   = 150;
 const SC_BOSS_HIT = 50;
 
+// Dash
+const DASH_CD   = 1.4;   // cooldown seconds after a dash
+const DASH_DUR  = 0.16;  // active dash duration seconds
+const DASH_SPD  = 880;   // dash velocity px/s
+
 // Tile types
 const TILE_EMPTY  = 0;
 const TILE_SOLID  = 1;
@@ -124,6 +129,7 @@ class Input {
     this._released = {};
     this._jumpTap  = false;
     this._shootTap = false;
+    this._dashTap  = false;
     this._confirmTap = false;
   }
 
@@ -141,6 +147,7 @@ class Input {
   shoot()       { return this.isDown('KeyZ') || this.isDown('KeyJ') || this.isDown('ControlLeft') || this.touch.shoot; }
   shootPressed(){ return this.wasPressed('KeyZ') || this.wasPressed('KeyJ') || this.wasPressed('ControlLeft') || this._shootTap; }
 
+  dash()  { return this.wasPressed('ShiftLeft') || this.wasPressed('ShiftRight') || this._dashTap; }
   pause() { return this.wasPressed('Escape') || this.wasPressed('KeyP'); }
   confirm(){ return this.wasPressed('Enter') || this.wasPressed('Space') || this.wasPressed('KeyZ') || this._jumpTap || this._shootTap || this._confirmTap; }
 }
@@ -805,13 +812,13 @@ class Background {
 
 
 class PlayerBolt {
-  constructor(x, y, dir) {
+  constructor(x, y, dir, vy = 0) {
     this.x   = x;
     this.y   = y;
     this.w   = 18;
     this.h   = 8;
     this.vx  = PROJ_SPEED * dir;
-    this.vy  = 0;
+    this.vy  = vy;
     this.dir = dir;
     this.dead = false;
     this._time = 0;
@@ -1018,26 +1025,47 @@ class Crystal {
     this.h    = T * 0.5;
     this.dead = false;
     this._time = Math.random() * Math.PI * 2;
+    this.vx   = 0;
+    this.vy   = 0;
   }
 
   update(dt, game) {
     this._time += dt * 2.5;
     const p = game.player;
+
+    // Magnet power-up: attract toward player
+    if (p.power.magnet > 0) {
+      const px   = p.x + p.w/2;
+      const py   = p.y + p.h/2;
+      const cx   = this.x + this.w/2;
+      const cy   = this.y + this.h/2;
+      const dist = Math.hypot(px - cx, py - cy);
+      const RANGE = 180;
+      if (dist < RANGE && dist > 1) {
+        const pull = (1 - dist / RANGE) * 500;
+        this.vx += (px - cx) / dist * pull * dt;
+        this.vy += (py - cy) / dist * pull * dt;
+      }
+    }
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.vx *= 0.85;
+    this.vy *= 0.85;
+
     if (rectOverlap(this.x - 4, this.y - 4, this.w + 8, this.h + 8, p.x, p.y, p.w, p.h)) {
       game.score += SC_CRYSTAL;
       game.audio.collectCrystal();
-      game.particles.crystalSpark(this.x + this.w / 2, this.y + this.h / 2);
-      game.addFloater(this.x + this.w / 2, this.y - 6, `+${SC_CRYSTAL}`, '#00ffcc');
+      game.particles.crystalSpark(this.x + this.w/2, this.y + this.h/2);
+      game.addFloater(this.x + this.w/2, this.y - 6, `+${SC_CRYSTAL}`, '#00ffcc');
       this.dead = true;
     }
   }
 
   render(ctx) {
-    const cx = this.x + this.w / 2;
-    const cy = this.y + this.h / 2 + Math.sin(this._time) * 3;
-    const t = this._time;
+    const cx = this.x + this.w/2;
+    const cy = this.y + this.h/2 + Math.sin(this._time) * 3;
+    const t  = this._time;
 
-    // Glow
     ctx.globalAlpha = 0.25 + 0.1 * Math.sin(t);
     const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 20);
     glow.addColorStop(0, '#00ffcc');
@@ -1046,8 +1074,7 @@ class Crystal {
     ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1;
 
-    // Crystal shape
-    ctx.fillStyle = `hsl(${170 + Math.sin(t) * 20},100%,65%)`;
+    ctx.fillStyle = `hsl(${170 + Math.sin(t)*20},100%,65%)`;
     ctx.beginPath();
     ctx.moveTo(cx, cy - 12);
     ctx.lineTo(cx + 6, cy - 2);
@@ -1058,7 +1085,6 @@ class Crystal {
     ctx.closePath();
     ctx.fill();
 
-    // Inner highlight
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.beginPath();
     ctx.moveTo(cx, cy - 10);
@@ -1076,7 +1102,7 @@ class PowerUp {
     this.y    = y * T + T * 0.1;
     this.w    = T * 0.8;
     this.h    = T * 0.8;
-    this.type = type; // 'doubleJump' | 'rapidFire' | 'shield' | 'life'
+    this.type = type;
     this.dead = false;
     this._time = Math.random() * Math.PI * 2;
   }
@@ -1086,6 +1112,10 @@ class PowerUp {
       case 'doubleJump': return ['#aa44ff', '#dd88ff'];
       case 'rapidFire':  return ['#ffaa00', '#ffee00'];
       case 'shield':     return ['#0066ff', '#44aaff'];
+      case 'spread':     return ['#00ff88', '#88ffcc'];
+      case 'magnet':     return ['#ff44ff', '#ff88ff'];
+      case 'speed':      return ['#ffee00', '#ffffff'];
+      case 'nuke':       return ['#ff2200', '#ff8800'];
       case 'life':       return ['#ff2244', '#ff88aa'];
       default:           return ['#ffffff', '#cccccc'];
     }
@@ -1096,6 +1126,10 @@ class PowerUp {
       case 'doubleJump': return '✦';
       case 'rapidFire':  return '⚡';
       case 'shield':     return '◈';
+      case 'spread':     return '✷';
+      case 'magnet':     return '⊕';
+      case 'speed':      return '▶▶';
+      case 'nuke':       return '☢';
       case 'life':       return '♥';
       default:           return '?';
     }
@@ -1107,7 +1141,9 @@ class PowerUp {
     if (rectOverlap(this.x, this.y, this.w, this.h, p.x, p.y, p.w, p.h)) {
       this._apply(p, game);
       game.audio.collectPowerup();
-      game.particles.crystalSpark(this.x + this.w / 2, this.y + this.h / 2);
+      game.particles.crystalSpark(this.x + this.w/2, this.y + this.h/2);
+      game.addFloater(this.x + this.w/2, this.y - 10,
+        this.type.toUpperCase() + (this.type !== 'nuke' && this.type !== 'life' ? '!' : ' ★'), '#ffcc00');
       this.dead = true;
     }
   }
@@ -1115,34 +1151,63 @@ class PowerUp {
   _apply(p, game) {
     switch (this.type) {
       case 'doubleJump':
-        p.canDoubleJump = true;
-        p.powerUpTimer  = 20;
-        p.activePowerUp = 'doubleJump';
+        p.power.doubleJump = 22;
         break;
       case 'rapidFire':
-        p.rapidFire    = true;
-        p.powerUpTimer  = 12;
-        p.activePowerUp = 'rapidFire';
+        p.power.rapidFire = 14;
         break;
       case 'shield':
-        p.shielded     = true;
-        p.powerUpTimer  = 15;
-        p.activePowerUp = 'shield';
+        p.power.shield = 18;
+        break;
+      case 'spread':
+        p.power.spread = 16;
+        break;
+      case 'magnet':
+        p.power.magnet = 14;
+        break;
+      case 'speed':
+        p.power.speed = 10;
+        break;
+      case 'nuke':
+        // Kill all on-screen enemies instantly
+        for (const e of game.enemies) {
+          if (!e.dead) e.takeDamage(999, game);
+        }
+        game.flash('#ffffff', 1.0);
+        game.hitStop(0.4);
+        game.camera.shake(24);
+        game.particles.explosion(p.x + p.w/2, p.y + p.h/2, '#ffaa00', 40);
         break;
       case 'life':
         game.lives = Math.min(game.lives + 1, 5);
         game.score += 200;
+        game.flash('#ff4488', 0.25);
         break;
     }
   }
 
   render(ctx) {
-    const cx = this.x + this.w / 2;
-    const cy = this.y + this.h / 2 + Math.sin(this._time) * 4;
-    const t = this._time;
+    const cx = this.x + this.w/2;
+    const cy = this.y + this.h/2 + Math.sin(this._time) * 4;
+    const t  = this._time;
     const [c1, c2] = this._color();
 
-    // Rotating glow ring
+    // Spinning outer ring
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 0.8);
+    ctx.globalAlpha = 0.25 + 0.1 * Math.sin(t);
+    for (let i = 0; i < 6; i++) {
+      const a  = (i / 6) * Math.PI * 2;
+      const rx = Math.cos(a) * 20;
+      const ry = Math.sin(a) * 20;
+      ctx.fillStyle = c1;
+      ctx.beginPath(); ctx.arc(rx, ry, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
+    // Glow
     ctx.globalAlpha = 0.3 + 0.1 * Math.sin(t);
     const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, 28);
     g.addColorStop(0, c1);
@@ -1152,12 +1217,12 @@ class PowerUp {
     ctx.globalAlpha = 1;
 
     // Box
-    const bx = cx - this.w / 2 + 2, by = cy - this.h / 2 + 2;
-    const bw = this.w - 4, bh = this.h - 4;
+    const bx = cx - this.w/2 + 2, by = cy - this.h/2 + 2;
+    const bw = this.w - 4,        bh = this.h - 4;
     ctx.strokeStyle = c1;
     ctx.lineWidth = 2;
     ctx.shadowColor = c1;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 12;
 
     const grad = ctx.createLinearGradient(bx, by, bx, by + bh);
     grad.addColorStop(0, c2 + '88');
@@ -1166,12 +1231,11 @@ class PowerUp {
     ctx.beginPath();
     ctx.roundRect(bx, by, bw, bh, 6);
     ctx.fill(); ctx.stroke();
-
     ctx.shadowBlur = 0;
 
     // Icon
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px sans-serif';
+    ctx.font = this.type === 'speed' ? 'bold 14px sans-serif' : 'bold 20px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(this._icon(), cx, cy);
@@ -1503,6 +1567,88 @@ class Bouncer extends Enemy {
   }
 }
 
+// ── Flyer: aerial drone that drops bombs ───────────────────────────────────
+class Flyer extends Enemy {
+  constructor(tx, ty) {
+    super(tx, ty, 32, 24);
+    this.hp = 2;
+    this._floatY     = this.y;
+    this._hoverPhase = Math.random() * Math.PI * 2;
+    this._shootTimer = rnd(1.5, 3.0);
+    this.vx = 70 * (Math.random() < 0.5 ? 1 : -1);
+  }
+  _deathColor() { return '#ffaa00'; }
+  _applyGravity(dt) { /* hover: no gravity */ }
+
+  update(dt, game) {
+    this._time += dt * 2;
+    this.invincible = Math.max(0, this.invincible - dt);
+    this._hoverPhase += dt * 2.5;
+
+    this.y = this._floatY + Math.sin(this._hoverPhase) * 8;
+    this.x += this.vx * dt;
+    this.dir = this.vx > 0 ? 1 : -1;
+
+    // Bounce off walls
+    const ahead = this.vx > 0 ? this.x + this.w + 4 : this.x - 4;
+    if (game.level.getTile(Math.floor(ahead / T), Math.floor((this.y + this.h/2) / T)) === 1 ||
+        this.x < 0 || this.x + this.w > game.level.worldW) {
+      this.vx = -this.vx;
+    }
+
+    // Drop bomb toward player
+    this._shootTimer -= dt;
+    if (this._shootTimer <= 0) {
+      this._shootTimer = rnd(2.0, 4.0);
+      const oy = this.y + this.h;
+      const p  = game.player;
+      const dx = (p.x + p.w/2) - (this.x + this.w/2);
+      const vx = dx * 0.5;
+      game.projectiles.push(new EnemyBullet(this.x + this.w/2, oy, vx, ENEMY_PROJ_SPD * 0.9));
+      game.audio.shoot();
+    }
+
+    this._checkPlayerStomp(game);
+  }
+
+  render(ctx) {
+    if (this.dead) return;
+    const cx  = this.x + this.w/2;
+    const cy  = this.y + this.h/2;
+    const inv = this.invincible > 0 ? 0.5 : 1;
+
+    ctx.globalAlpha = 0.28 * inv;
+    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);
+    g.addColorStop(0, '#ffaa00'); g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = inv;
+
+    ctx.fillStyle = '#884400';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 4, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#cc7700';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+
+    const dg = ctx.createRadialGradient(cx - 3, cy - 5, 1, cx, cy, 10);
+    dg.addColorStop(0, '#ffee88'); dg.addColorStop(1, '#ff8800');
+    ctx.fillStyle = dg;
+    ctx.beginPath(); ctx.ellipse(cx, cy - 2, 8, 8, 0, Math.PI, 0); ctx.fill();
+
+    ctx.fillStyle = '#ff2200';
+    ctx.beginPath(); ctx.arc(cx, cy + 2, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath(); ctx.arc(cx + 1, cy + 1, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    for (let i = -1; i <= 1; i += 2) {
+      const pulse = 0.5 + 0.5 * Math.sin(this._time * 6 + i * 1.5);
+      ctx.fillStyle = `rgba(255,180,0,${pulse})`;
+      ctx.beginPath(); ctx.arc(cx + i * 14, cy + 4, 3, 0, Math.PI * 2); ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+  }
+}
+
 // ── Shooter: turret enemy ─────────────────────────────────────────────────
 class Shooter extends Enemy {
   constructor(tx, ty) {
@@ -1623,9 +1769,118 @@ const BOSS_W = 96;
 const BOSS_H = 84;
 const MAX_HP = 20;
 
+// Minion spawned by boss in phase 4
+class BossMinion {
+  constructor(x, y) {
+    this.x = x - 14;
+    this.y = y - 36;
+    this.w = 28;
+    this.h = 36;
+    this.vx = 0;
+    this.vy = 0;
+    this.hp = 2;
+    this.dead = false;
+    this.invincible = 0;
+    this.dir = Math.random() < 0.5 ? -1 : 1;
+    this._time = Math.random() * Math.PI * 2;
+    this._stomped = false;
+  }
+
+  takeDamage(dmg, game) {
+    if (this.invincible > 0) return;
+    this.hp -= dmg;
+    this.invincible = 0.12;
+    game.audio.enemyHit();
+    if (this.hp <= 0) {
+      this.dead = true;
+      game.addKill(120, this.x + this.w/2, this.y, '#ff44aa');
+      game.audio.enemyDie();
+      game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff44aa', 14);
+    }
+  }
+
+  update(dt, game) {
+    this._time += dt;
+    this.invincible = Math.max(0, this.invincible - dt);
+
+    const p = game.player;
+    const dx = (p.x + p.w/2) - (this.x + this.w/2);
+    this.dir = dx > 0 ? 1 : -1;
+    this.vx = 160 * this.dir;
+
+    this.vy = Math.min(this.vy + 2400 * dt, 900);
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    const ty = Math.floor((this.y + this.h) / T);
+    const tx = Math.floor((this.x + this.w/2) / T);
+    const tile = game.level.getTile(tx, ty);
+    if (tile === 1 || tile === 2) {
+      this.y  = ty * T - this.h;
+      this.vy = 0;
+    }
+
+    // Clamp to world
+    this.x = Math.max(0, Math.min(this.x, game.level.worldW - this.w));
+
+    if (!p.invincible && !p._dying) {
+      const hit = p.x < this.x + this.w && p.x + p.w > this.x &&
+                  p.y < this.y + this.h && p.y + p.h > this.y;
+      if (hit) {
+        if (p.vy > 50 && p.y + p.h < this.y + 24) {
+          this._stomped = true;
+          this.takeDamage(1, game);
+          p.stompBounce();
+        } else {
+          p.hurt(game);
+        }
+      }
+    }
+
+    if (this.y > game.level.worldH + 200) this.dead = true;
+  }
+
+  render(ctx) {
+    const cx = this.x + this.w/2;
+    const cy = this.y + this.h/2;
+    const pulse = 0.7 + 0.3 * Math.sin(this._time * 8);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (this.dir < 0) ctx.scale(-1, 1);
+
+    // Glow
+    ctx.globalAlpha = 0.3 * pulse;
+    const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 22);
+    g.addColorStop(0, '#ff44aa');
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Body
+    ctx.fillStyle = '#55001a';
+    ctx.beginPath(); ctx.roundRect(-12, -16, 24, 32, 4); ctx.fill();
+    // Head
+    ctx.fillStyle = '#880033';
+    ctx.beginPath(); ctx.roundRect(-10, -22, 20, 16, 4); ctx.fill();
+    // Eye
+    ctx.fillStyle = `rgba(255,80,0,${pulse})`;
+    ctx.beginPath(); ctx.arc(2, -15, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath(); ctx.arc(3, -16, 2, 0, Math.PI * 2); ctx.fill();
+    // Legs
+    ctx.fillStyle = '#440022';
+    ctx.fillRect(-8, 14, 7, 12);
+    ctx.fillRect(2, 14, 7, 12);
+
+    ctx.restore();
+  }
+}
+
 class Boss {
   constructor(tx, ty) {
-    this.x    = tx * T - BOSS_W / 2;
+    this.x    = tx * T - BOSS_W/2;
     this.y    = ty * T - BOSS_H + T;
     this.w    = BOSS_W;
     this.h    = BOSS_H;
@@ -1638,31 +1893,39 @@ class Boss {
     this._prevY = this.y;
 
     this.invincible = 0;
-    this.phase = 1; // 1, 2, or 3
+    this.phase      = 1; // 1-4
 
     // Attack timers
-    this._stompTimer  = 3.0;
-    this._shotTimer   = 4.0;
-    this._jumpTimer   = 6.0;
-    this._stunTimer   = 0; // briefly stunned after landing slam
+    this._stompTimer    = 3.0;
+    this._shotTimer     = 4.0;
+    this._jumpTimer     = 6.0;
+    this._hellTimer     = 5.0; // bullet hell (phase 2+)
+    this._laserTimer    = 8.0; // laser charge+fire (phase 3+)
+    this._teleportTimer = 6.0; // teleport (phase 4)
+    this._minionTimer   = 8.0; // minion spawn (phase 4)
+    this._stunTimer     = 0;
+
+    // Laser state machine
+    this._laserState = null; // null | 'charge' | 'fire'
+    this._laserCD    = 0;    // countdown within state
+    this._laserY     = 0;
+    this._laserX0    = 0;
+    this._laserX1    = 3000;
 
     // Animation
-    this._time    = 0;
-    this._walkAnim = 0;
-    this._hitFlash = 0;
-    this._roarTimer = 0;
+    this._time      = 0;
+    this._walkAnim  = 0;
+    this._hitFlash  = 0;
+    this._enrageFlash = 0;
 
     // Intro sequence
-    this._intro = true;
+    this._intro      = true;
     this._introTimer = 2.5;
-    this._roarTimer = 2.0;
-    this._entered = false;
-  }
+    this._roarTimer  = 2.0;
 
-  get phase1() { return this.hp > 13; }
-  get phase2() { return this.hp > 6 && this.hp <= 13; }
-  get phase3() { return this.hp <= 6; }
-  get currentPhase() { return this.phase1 ? 1 : this.phase2 ? 2 : 3; }
+    this._pendingSlam = false;
+    this._bulletHellRot = 0;
+  }
 
   takeDamage(dmg, game) {
     if (this.invincible > 0 || this._intro) return;
@@ -1673,18 +1936,23 @@ class Boss {
     game.audio.bossHit();
     game.camera.shake(8);
     game.hitStop(0.04);
-    game.flash('#ff6622', 0.12);
+    game.flash('#ff6622', 0.15);
     game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff4400', 10);
 
     // Phase transition
-    const newPhase = this.currentPhase;
+    const newPhase = this.hp <= 3 ? 4 : this.hp <= 8 ? 3 : this.hp <= 14 ? 2 : 1;
     if (newPhase !== this.phase) {
       this.phase = newPhase;
-      game.camera.shake(18);
-      game.hitStop(0.12);
-      game.flash('#ffaa33', 0.4);
+      game.camera.shake(22);
+      game.hitStop(0.18);
+      game.flash(newPhase === 4 ? '#ff0000' : '#ffaa33', 0.55);
       game.audio.explosion();
-      game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff8800', 30);
+      game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff8800', 35);
+      game.addFloater(this.x + this.w/2, this.y - 30,
+        newPhase === 4 ? '☠ ENRAGE!' : `PHASE ${newPhase}`, '#ff4400');
+      // Reset attack timers tighter per phase
+      this._stompTimer = 0.5;
+      this._shotTimer  = 0.5;
     }
 
     if (this.hp <= 0) this._die(game);
@@ -1692,20 +1960,23 @@ class Boss {
 
   _die(game) {
     this.dead = true;
+    game._slowMo = 0.2; // dramatic slow-motion
     game.audio.explosion();
-    game.camera.shake(20);
-    game.hitStop(0.3);
-    game.flash('#ffffff', 0.7);
-    for (let i = 0; i < 4; i++) {
+    game.camera.shake(28);
+    game.hitStop(0.35);
+    game.flash('#ffffff', 0.9);
+    for (let i = 0; i < 8; i++) {
       setTimeout(() => {
+        if (!game.particles) return;
         game.particles.explosion(
-          this.x + rnd(0, this.w), this.y + rnd(0, this.h),
-          ['#ff4400','#ff8800','#ffcc00'][rndInt(0,2)], 25
+          this.x + rnd(0, this.w),
+          this.y + rnd(0, this.h),
+          ['#ff4400','#ff8800','#ffcc00','#ffffff'][rndInt(0,3)], 28
         );
-      }, i * 200);
+        game.camera.shake(12);
+      }, i * 180);
     }
-    // Trigger win after delay
-    setTimeout(() => { game.triggerWin(); }, 1500);
+    setTimeout(() => { game.triggerWin(); }, 2200);
   }
 
   update(dt, game) {
@@ -1715,127 +1986,243 @@ class Boss {
 
     if (this.dead) return;
 
-    // Intro sequence
+    // Intro sequence: boss drops in dramatically
     if (this._intro) {
       this._introTimer -= dt;
       this._roarTimer  -= dt;
       if (this._roarTimer > 0) {
         game.camera.shake(4 * (this._roarTimer / 2));
-        if (Math.random() < 0.3) {
-          game.particles.bossSmoke(this.x + this.w/2, this.y);
-        }
+        if (Math.random() < 0.3) game.particles.bossSmoke(this.x + this.w/2, this.y);
       }
       if (this._introTimer <= 0) this._intro = false;
-
-      // Boss drops in during intro
       this._applyGravity(dt);
       this._moveY(game.level, dt);
       return;
     }
 
-    // Stun (after slam landing)
-    if (this._stunTimer > 0) {
-      this._stunTimer -= dt;
-      return;
-    }
+    if (this._stunTimer > 0) { this._stunTimer -= dt; return; }
+
+    // Tick all laser state
+    this._updateLaser(dt, game);
 
     // Phase-based speed
-    const speed = this.phase === 1 ? 90 : this.phase === 2 ? 130 : 170;
+    const speed = [0, 90, 130, 160, 200][this.phase] ?? 200;
 
-    // Walk toward player
+    // Walk toward player (or teleport in phase 4 — walk is slower between ports)
     const p = game.player;
     const dx = (p.x + p.w/2) - (this.x + this.w/2);
     this.dir = dx > 0 ? 1 : -1;
     this.vx  = speed * this.dir;
 
-    // Attack timers
-    this._stompTimer -= dt;
-    this._walkAnim   += dt * 6;
+    this._walkAnim += dt * (6 + this.phase);
 
-    if (this.phase >= 2) {
-      this._shotTimer -= dt;
-    }
-    if (this.phase === 3) {
-      this._jumpTimer -= dt;
+    // Attack timer countdowns (faster in higher phases)
+    const pace = this.phase === 4 ? 0.55 : this.phase === 3 ? 0.72 : 1.0;
+    this._stompTimer  -= dt;
+    this._shotTimer   -= dt;
+    this._hellTimer   -= dt;
+    this._laserTimer  -= dt;
+    this._jumpTimer   -= dt;
+    if (this.phase === 4) {
+      this._teleportTimer -= dt;
+      this._minionTimer   -= dt;
     }
 
-    // Stomp attack
+    // Stomp attack (all phases)
     if (this._stompTimer <= 0 && this.grounded) {
       this._doStomp(game);
-      this._stompTimer = this.phase === 3 ? 1.8 : 2.8;
+      this._stompTimer = (2.8 - (this.phase - 1) * 0.45) * pace;
     }
 
-    // Shoot attack (phase 2+)
-    if (this.phase >= 2 && this._shotTimer <= 0) {
+    // Targeted shoot (all phases, escalating spread)
+    if (this._shotTimer <= 0) {
       this._doShoot(game);
-      this._shotTimer = this.phase === 3 ? 1.5 : 2.5;
+      this._shotTimer = (2.5 - (this.phase - 1) * 0.35) * pace;
     }
 
-    // Jump slam (phase 3)
-    if (this.phase === 3 && this._jumpTimer <= 0 && this.grounded) {
+    // Bullet hell ring (phase 2+)
+    if (this.phase >= 2 && this._hellTimer <= 0 && this._laserState === null) {
+      this._doBulletHell(game);
+      this._hellTimer = (4.0 - (this.phase - 2) * 0.6) * pace;
+    }
+
+    // Laser (phase 3+)
+    if (this.phase >= 3 && this._laserTimer <= 0 && this._laserState === null) {
+      this._startLaser(game);
+      this._laserTimer = (7.0 - (this.phase - 3) * 1.5) * pace;
+    }
+
+    // Jump slam (phase 2+)
+    if (this.phase >= 2 && this._jumpTimer <= 0 && this.grounded) {
       this._doJumpSlam(game);
-      this._jumpTimer = 3.5;
+      this._jumpTimer = (4.0 - (this.phase - 2) * 0.5) * pace;
     }
 
-    // Gravity + movement
+    // Teleport (phase 4)
+    if (this.phase === 4 && this._teleportTimer <= 0) {
+      this._doTeleport(game);
+      this._teleportTimer = 4.5;
+    }
+
+    // Minion spawn (phase 4)
+    if (this.phase === 4 && this._minionTimer <= 0) {
+      this._spawnMinions(game);
+      this._minionTimer = 7.0;
+    }
+
+    // Physics
     const wasGrounded = this.grounded;
     this._applyGravity(dt);
     this._moveX(game.level, dt);
     this._moveY(game.level, dt);
 
-    // Jump-slam landing
     if (!wasGrounded && this.grounded && this._pendingSlam) {
       this._pendingSlam = false;
       this._doStomp(game);
     }
 
-    // Smoke trail in phase 3
-    if (this.phase === 3 && Math.random() < 0.3) {
+    // Phase 3+ smoke trail
+    if (this.phase >= 3 && Math.random() < 0.3) {
       game.particles.bossSmoke(this.x + this.w/2, this.y + this.h);
     }
 
+    // Enrage pulse
+    if (this.phase === 4) this._enrageFlash = (this._enrageFlash + dt * 6) % (Math.PI * 2);
+
     // Player contact
-    if (!p.invincible && rectOverlap(this.x, this.y, this.w, this.h, p.x, p.y, p.w, p.h)) {
+    if (!p.invincible && !p._dying &&
+        rectOverlap(this.x, this.y, this.w, this.h, p.x, p.y, p.w, p.h)) {
       p.hurt(game);
+    }
+
+    // Laser damage check
+    if (this._laserState === 'fire') {
+      const laserTop = this._laserY - 14;
+      const laserBot = this._laserY + 14;
+      if (!p.invincible && p.y < laserBot && p.y + p.h > laserTop) {
+        p.hurt(game);
+      }
     }
   }
 
+  // ── Attack methods ─────────────────────────────────────────────
   _doStomp(game) {
-    game.camera.shake(14);
+    game.camera.shake(16);
     game.audio.explosion();
-    // Shockwave left and right
+    game.flash('#ff8800', 0.12);
     const sy = this.y + this.h - 20;
-    game.projectiles.push(new Shockwave(this.x + this.w/2, sy,  1, 240));
-    game.projectiles.push(new Shockwave(this.x + this.w/2, sy, -1, 240));
+    const spd = 240 + this.phase * 30;
+    game.projectiles.push(new Shockwave(this.x + this.w/2, sy,  1, spd));
+    game.projectiles.push(new Shockwave(this.x + this.w/2, sy, -1, spd));
+    if (this.phase >= 3) {
+      // Extra angled shockwaves
+      game.projectiles.push(new Shockwave(this.x + this.w/2, sy,  1, spd * 0.6));
+      game.projectiles.push(new Shockwave(this.x + this.w/2, sy, -1, spd * 0.6));
+    }
     game.particles.landDust(this.x + this.w/2, this.y + this.h);
-    this._stunTimer = 0.5;
+    this._stunTimer = 0.4;
   }
 
   _doShoot(game) {
-    const ox = this.x + (this.dir > 0 ? this.w + 4 : -14);
-    const oy = this.y + 20;
-    const p  = game.player;
-    // Fire spread of 3 bullets in phase 3
-    const count = this.phase === 3 ? 3 : 1;
+    const ox  = this.x + (this.dir > 0 ? this.w + 4 : -14);
+    const oy  = this.y + 24;
+    const p   = game.player;
+    // Phase 1: 1 shot. Phase 2: 3-way. Phase 3: 5-way. Phase 4: 7-way ring toward player.
+    const count = this.phase === 4 ? 7 : this.phase === 3 ? 5 : this.phase === 2 ? 3 : 1;
+    const baseAng = Math.atan2(p.y + p.h/2 - oy, p.x + p.w/2 - ox);
+    const totalSpread = this.phase >= 3 ? 1.1 : 0.5;
+    const spd = 240 + (this.phase - 1) * 38;
     for (let i = 0; i < count; i++) {
-      const spread = (i - (count - 1) / 2) * 0.3;
-      const ang = Math.atan2(p.y + p.h/2 - oy, p.x + p.w/2 - ox) + spread;
-      game.projectiles.push(new EnemyBullet(ox, oy, Math.cos(ang)*260, Math.sin(ang)*260));
+      const ang = count === 1 ? baseAng : baseAng + (i/(count-1) - 0.5) * totalSpread;
+      game.projectiles.push(new EnemyBullet(ox, oy, Math.cos(ang)*spd, Math.sin(ang)*spd));
     }
     game.audio.shoot();
   }
 
+  _doBulletHell(game) {
+    const cx  = this.x + this.w/2;
+    const cy  = this.y + this.h/2;
+    const cnt = this.phase >= 4 ? 18 : this.phase === 3 ? 14 : 10;
+    const spd = 200 + (this.phase - 2) * 45;
+    for (let i = 0; i < cnt; i++) {
+      const ang = (i / cnt) * Math.PI * 2 + this._bulletHellRot;
+      game.projectiles.push(new EnemyBullet(cx, cy, Math.cos(ang)*spd, Math.sin(ang)*spd));
+    }
+    this._bulletHellRot += 0.37;
+    game.audio.explosion();
+    game.flash('#ff2200', 0.1);
+    game.particles.explosion(cx, cy, '#ff4400', 12);
+  }
+
+  _startLaser(game) {
+    this._laserState = 'charge';
+    this._laserCD    = 1.2;
+    this._laserY     = game.player.y + game.player.h/2;
+    this._laserX0    = 0;
+    this._laserX1    = game.level.worldW;
+    game.camera.shake(5);
+  }
+
+  _updateLaser(dt, game) {
+    if (!this._laserState) return;
+    this._laserCD -= dt;
+
+    if (this._laserState === 'charge') {
+      // Track player Y during charge
+      const p = game.player;
+      this._laserY = this._laserY * 0.95 + (p.y + p.h/2) * 0.05;
+      if (this._laserCD <= 0) {
+        this._laserState = 'fire';
+        this._laserCD    = 0.55;
+        game.camera.shake(16);
+        game.flash('#ff0000', 0.4);
+        game.audio.explosion();
+      }
+    } else if (this._laserState === 'fire') {
+      if (this._laserCD <= 0) {
+        this._laserState = null;
+      }
+    }
+  }
+
   _doJumpSlam(game) {
-    this.vy = -700;
+    this.vy = -720;
     this.grounded = false;
-    game.camera.shake(6);
-    // On landing (handled in _moveY), create 3 shockwaves
+    game.camera.shake(8);
     this._pendingSlam = true;
   }
 
-  _applyGravity(dt) {
-    this.vy = Math.min(this.vy + 2200 * dt, 900);
+  _doTeleport(game) {
+    const level = game.level;
+    // Flash at old position
+    game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#aa00ff', 22);
+    game.flash('#aa00ff', 0.2);
+    game.audio.doubleJump(); // reuse sound for warp effect
+
+    // Pick new position near ground on opposite side
+    const newX = this.dir > 0
+      ? rnd(level.worldW * 0.05, level.worldW * 0.35)
+      : rnd(level.worldW * 0.55, level.worldW * 0.88);
+    this.x = newX;
+    this.vy = 0;
+
+    // Flash at new position
+    game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff00ff', 22);
+    game.camera.shake(10);
+    this.invincible = 0.5;
   }
+
+  _spawnMinions(game) {
+    const count = this.phase === 4 ? 3 : 2;
+    for (let i = 0; i < count; i++) {
+      const mx = this.x + this.w/2 + (i - 1) * 80;
+      game.enemies.push(new BossMinion(mx, this.y + this.h));
+    }
+    game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#ff44aa', 16);
+    game.audio.enemyDie(); // reuse for spawn sound
+  }
+
+  _applyGravity(dt) { this.vy = Math.min(this.vy + 2200 * dt, 900); }
 
   _moveX(level, dt) {
     this.x += this.vx * dt;
@@ -1860,7 +2247,6 @@ class Boss {
     this._prevY = this.y;
     this.y += this.vy * dt;
     this.grounded = false;
-
     const tx0 = Math.floor(this.x / T);
     const tx1 = Math.floor((this.x + this.w - 1) / T);
     const ty0 = Math.floor(this.y / T);
@@ -1882,55 +2268,56 @@ class Boss {
 
   render(ctx) {
     if (this.dead) return;
-    const flash = this._hitFlash > 0;
-    if (flash && Math.floor(this._hitFlash * 25) % 2 === 0) {
-      ctx.globalAlpha = 0.5;
-    }
 
-    const cx = this.x + this.w / 2;
-    const cy = this.y + this.h / 2;
+    // Laser telegraph / fire (world-space, behind boss)
+    this._renderLaser(ctx);
+
+    const flash = this._hitFlash > 0;
+    if (flash && Math.floor(this._hitFlash * 25) % 2 === 0) ctx.globalAlpha = 0.5;
+
+    const cx   = this.x + this.w/2;
+    const cy   = this.y + this.h/2;
     const walk = Math.sin(this._walkAnim) * 3;
 
-    // Draw phase-colored aura
-    const phaseHue = this.phase === 1 ? 220 : this.phase === 2 ? 30 : 0;
-    ctx.globalAlpha = 0.2;
-    const aura = ctx.createRadialGradient(cx, cy, 10, cx, cy, 70);
+    // Phase aura
+    const phaseHue = this.phase === 1 ? 220 : this.phase === 2 ? 30 : this.phase === 3 ? 0 : 330;
+    const enrPulse = this.phase === 4 ? 0.3 + 0.7 * Math.abs(Math.sin(this._enrageFlash)) : 0.2;
+    ctx.globalAlpha = enrPulse;
+    const aura = ctx.createRadialGradient(cx, cy, 10, cx, cy, 80);
     aura.addColorStop(0, `hsl(${phaseHue},100%,60%)`);
     aura.addColorStop(1, 'transparent');
     ctx.fillStyle = aura;
-    ctx.beginPath(); ctx.arc(cx, cy, 70, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 80, 0, Math.PI * 2); ctx.fill();
     ctx.globalAlpha = 1;
 
     ctx.save();
     ctx.translate(cx, cy + walk);
     if (this.dir < 0) ctx.scale(-1, 1);
 
-    // Legs (4 mechanical legs)
+    // Legs
     ctx.fillStyle = '#333355';
     for (let i = 0; i < 4; i++) {
-      const lx = -40 + i * 26;
+      const lx       = -40 + i * 26;
       const legPhase = Math.sin(this._walkAnim + i * 1.2) * 8;
       ctx.fillRect(lx, 28, 12, 22 + legPhase);
-      // Foot
       ctx.fillStyle = '#555577';
       ctx.fillRect(lx - 4, 48 + legPhase, 20, 8);
       ctx.fillStyle = '#333355';
     }
 
-    // Body
+    // Body (enrage flickers red)
+    const bodyColor0 = this.phase === 4 ? `hsl(${350 + 10 * Math.sin(this._enrageFlash)},80%,25%)` : '#444466';
     const bodyGrad = ctx.createLinearGradient(-40, -32, 40, 32);
-    bodyGrad.addColorStop(0, '#444466');
+    bodyGrad.addColorStop(0, bodyColor0);
     bodyGrad.addColorStop(0.5, '#222244');
     bodyGrad.addColorStop(1, '#111133');
     ctx.fillStyle = bodyGrad;
-    ctx.beginPath();
-    ctx.roundRect(-44, -28, 88, 60, 12);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(-44, -28, 88, 60, 12); ctx.fill();
 
     // Armour plates
     ctx.fillStyle = '#333355';
-    ctx.fillRect(-44, -28, 88, 14); // top plate
-    ctx.fillRect(-44, 18, 88, 14);  // bottom plate
+    ctx.fillRect(-44, -28, 88, 14);
+    ctx.fillRect(-44, 18, 88, 14);
 
     // Rivets
     ctx.fillStyle = '#555588';
@@ -1945,10 +2332,21 @@ class Boss {
       ctx.fillRect(28, -38, 28, 14);
       ctx.fillStyle = '#331100';
       ctx.beginPath(); ctx.arc(56, -31, 8, 0, Math.PI * 2); ctx.fill();
-      // Glow
       const cg = 0.5 + 0.5 * Math.sin(this._time * 8);
-      ctx.fillStyle = `rgba(255,${this.phase === 3 ? 50 : 100},0,${cg})`;
+      ctx.fillStyle = `rgba(255,${this.phase >= 3 ? 50 : 100},0,${cg})`;
       ctx.beginPath(); ctx.arc(56, -31, 5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // Phase 4: extra shoulder spikes
+    if (this.phase === 4) {
+      ctx.fillStyle = '#ff0033';
+      for (let i = -1; i <= 1; i += 2) {
+        ctx.save();
+        ctx.translate(i * 44, -28);
+        ctx.rotate(i * 0.4);
+        ctx.fillRect(-4, -18, 8, 20);
+        ctx.restore();
+      }
     }
 
     // Head
@@ -1961,34 +2359,94 @@ class Boss {
     // Visor
     ctx.fillStyle = '#110022';
     ctx.fillRect(-20, -54, 40, 16);
-    // Eye (one big glowing eye)
-    const eyeGlow = 0.6 + 0.4 * Math.sin(this._time * 6);
-    const eyeHue = this.phase === 3 ? 0 : this.phase === 2 ? 30 : 200;
-    ctx.fillStyle = `hsla(${eyeHue},100%,60%,${eyeGlow})`;
+
+    // Eye — color shifts with phase
+    const eyeGlow = 0.6 + 0.4 * Math.sin(this._time * (6 + this.phase * 2));
+    const eyeHue  = this.phase === 4 ? `hsl(0,100%,${50+30*eyeGlow}%)` :
+                    this.phase === 3 ? '#ff4400' :
+                    this.phase === 2 ? '#ff8800' : '#00aaff';
+    ctx.fillStyle = eyeHue;
     ctx.fillRect(-16, -52, 32, 12);
-    ctx.fillStyle = `hsla(${eyeHue},100%,80%,0.9)`;
-    ctx.beginPath(); ctx.arc(0, -46, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(0, -46, 5 * eyeGlow, 0, Math.PI * 2); ctx.fill();
 
     ctx.restore();
 
-    // HP bar above boss
-    const barW = this.w * 1.2;
-    const barX = this.x + this.w/2 - barW/2;
-    const barY = this.y - 22;
+    // HP bar
+    const barW  = this.w * 1.3;
+    const barX  = this.x + this.w/2 - barW/2;
+    const barY  = this.y - 28;
     ctx.fillStyle = '#330000';
-    ctx.fillRect(barX, barY, barW, 10);
-    const hpFrac = this.hp / MAX_HP;
+    ctx.fillRect(barX, barY, barW, 12);
+    const hpFrac  = this.hp / MAX_HP;
     const barColor = hpFrac > 0.5 ? '#00ff44' : hpFrac > 0.25 ? '#ffaa00' : '#ff2200';
     ctx.fillStyle = barColor;
-    ctx.fillRect(barX, barY, barW * hpFrac, 10);
+    ctx.fillRect(barX, barY, barW * hpFrac, 12);
+    // Phase dividers
+    for (const frac of [14/20, 8/20, 3/20]) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(barX + barW * frac - 1, barY, 2, 12);
+    }
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barW, 10);
+    ctx.strokeRect(barX, barY, barW, 12);
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 10px monospace';
+    const bossLabel = this.phase === 4 ? '☠ MECH-REX ENRAGED' :
+                      this.phase === 3 ? '⚡ MECH-REX' :
+                      this.phase === 2 ? '🔥 MECH-REX' : 'MECH-REX';
+    ctx.fillStyle = this.phase === 4 ? '#ff4444' : '#ffffff';
+    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('MECH-REX', cx, barY - 4);
+    ctx.fillText(bossLabel, this.x + this.w/2, barY - 5);
+
+    ctx.globalAlpha = 1;
+  }
+
+  _renderLaser(ctx) {
+    if (!this._laserState) return;
+    const x0 = this._laserX0;
+    const x1 = this._laserX1;
+    const y  = this._laserY;
+
+    if (this._laserState === 'charge') {
+      const progress = 1 - this._laserCD / 1.2;
+      ctx.globalAlpha = 0.15 + progress * 0.5;
+      ctx.strokeStyle = '#ff2200';
+      ctx.lineWidth = 2 + progress * 6;
+      ctx.setLineDash([12, 8]);
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Warning triangles
+      for (let x = x0 + 40; x < x1; x += 120) {
+        ctx.fillStyle = `rgba(255,80,0,${0.4 * progress})`;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 14);
+        ctx.lineTo(x + 10, y);
+        ctx.lineTo(x - 10, y);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (this._laserState === 'fire') {
+      const pulse = 0.85 + 0.15 * Math.sin(this._time * 30);
+      // Outer glow
+      ctx.globalAlpha = 0.5;
+      const laserGrad = ctx.createLinearGradient(0, y - 22, 0, y + 22);
+      laserGrad.addColorStop(0, 'transparent');
+      laserGrad.addColorStop(0.5, '#ff2200');
+      laserGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = laserGrad;
+      ctx.fillRect(x0, y - 22, x1 - x0, 44);
+      // Core beam
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#ff6600';
+      ctx.fillRect(x0, y - 10, x1 - x0, 20);
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x0, y - 4, x1 - x0, 8);
+    }
 
     ctx.globalAlpha = 1;
   }
@@ -2009,69 +2467,71 @@ class Player {
     this.vx = 0;
     this.vy = 0;
 
-    this.grounded      = false;
-    this.facingRight   = true;
-    this._coyote       = 0;  // coyote time counter
-    this._jumpBuf      = 0;  // jump buffer counter
-    this._jumpHeld     = 0;  // how long jump has been held
-    this._wasGrounded  = false;
-    this._prevY        = 0;
+    this.grounded     = false;
+    this.facingRight  = true;
+    this._coyote      = 0;
+    this._jumpBuf     = 0;
+    this._jumpHeld    = 0;
+    this._wasGrounded = false;
+    this._prevY       = 0;
 
-    this.invincible    = false;
-    this._invTimer     = 0;
+    this.invincible = false;
+    this._invTimer  = 0;
 
-    // Power-ups
-    this.canDoubleJump = false;
-    this._hasJumped2   = false;
-    this.rapidFire     = false;
-    this.shielded      = false;
-    this.powerUpTimer  = 0;
-    this.activePowerUp = null;
+    // Power-ups: name → remaining seconds (multiple active simultaneously)
+    this.power = {};  // rapidFire | spread | shield | doubleJump | magnet | speed
+    this._hasJumped2 = false;
 
-    this._shootTimer   = 0;
+    this._shootTimer = 0;
+
+    // Dash — core ability, always available (Shift key)
+    this._dashCD    = 0;
+    this._dashTimer = 0;
+    this.dashing    = false;
+    this._dashDir   = 1;
 
     // Animation
-    this._animTime     = 0;
-    this._animFrame    = 0;
-    this._shootAnim    = 0;
-    this._hurtFlash    = 0;
-    this._landAnim     = 0;
-    this._deathAnim    = 0;
+    this._animTime  = 0;
+    this._animFrame = 0;
+    this._shootAnim = 0;
+    this._hurtFlash = 0;
+    this._landAnim  = 0;
+    this._deathAnim = 0;
 
-    this.dead          = false;
-    this._dying        = false;
+    this.dead   = false;
+    this._dying = false;
 
     // Speed afterimage trail
-    this._ghosts       = [];
-    this._ghostTimer   = 0;
+    this._ghosts     = [];
+    this._ghostTimer = 0;
   }
 
   hurt(game) {
     if (this.invincible || this._dying) return;
 
-    if (this.shielded) {
-      this.shielded = false;
-      this.powerUpTimer = 0;
-      this.activePowerUp = null;
+    if (this.power.shield > 0) {
+      delete this.power.shield;
       game.audio.collectPowerup();
-      game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#0066ff', 12);
+      game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#0066ff', 14);
       game.camera.shake(6);
+      game.flash('#4488ff', 0.4);
       return;
     }
 
     game.lives--;
     game.audio.playerHurt();
-    game.camera.shake(12);
+    game.camera.shake(14);
+    game.flash('#ff2222', 0.35);
     game.particles.hurt(this.x + this.w/2, this.y + this.h/2);
 
     this.invincible = true;
     this._invTimer  = INVINCIBLE_T;
     this._hurtFlash = 0;
-    this.vy = -300; // small knockup
+    this.vy = -300;
     this.vx = this.facingRight ? -150 : 150;
 
     if (game.lives <= 0) {
-      this._dying = true;
+      this._dying     = true;
       this._deathAnim = 0;
     }
   }
@@ -2083,24 +2543,16 @@ class Player {
       this._deathAnim += dt;
       this.vy += GRAVITY * dt;
       this.y  += this.vy * dt;
-      if (this._deathAnim > 1.5) {
-        this.dead = true;
-      }
+      if (this._deathAnim > 1.5) this.dead = true;
       return;
     }
 
     this._prevY = this.y;
 
-    // Power-up timer
-    if (this.powerUpTimer > 0) {
-      this.powerUpTimer -= dt;
-      if (this.powerUpTimer <= 0) {
-        this.powerUpTimer  = 0;
-        this.canDoubleJump = false;
-        this.rapidFire     = false;
-        this.shielded      = false;
-        this.activePowerUp = null;
-      }
+    // Decay all power-up timers simultaneously
+    for (const key of Object.keys(this.power)) {
+      this.power[key] -= dt;
+      if (this.power[key] <= 0) delete this.power[key];
     }
 
     // Invincibility
@@ -2113,18 +2565,42 @@ class Player {
     // Shoot cooldown
     this._shootTimer = Math.max(0, this._shootTimer - dt);
 
-    // ── Horizontal movement ────────────────────────────────────────
-    const spd = PLAYER_SPEED * (this.rapidFire ? 1.4 : 1);
-    if (inp.left()) {
-      this.vx = clamp(this.vx - PLAYER_ACCEL * dt, -spd, spd);
-      this.facingRight = false;
-    } else if (inp.right()) {
-      this.vx = clamp(this.vx + PLAYER_ACCEL * dt, -spd, spd);
-      this.facingRight = true;
-    } else {
-      // Decelerate
-      if (Math.abs(this.vx) < 20) this.vx = 0;
-      else this.vx -= sign(this.vx) * PLAYER_DECEL * dt;
+    // ── Dash (Shift key, always available) ───────────────────────
+    this._dashCD = Math.max(0, this._dashCD - dt);
+    if (inp.dash() && this._dashCD <= 0 && this._dashTimer <= 0) {
+      this._dashDir   = this.facingRight ? 1 : -1;
+      this._dashTimer = DASH_DUR;
+      this._dashCD    = DASH_CD;
+      this.dashing    = true;
+      this.invincible = true;
+      this._invTimer  = Math.max(this._invTimer, DASH_DUR + 0.06);
+      game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#00ddff', 10);
+      game.flash('#00ddff', 0.08);
+    }
+
+    if (this._dashTimer > 0) {
+      this._dashTimer -= dt;
+      this.vy  = 0;
+      this.vx  = this._dashDir * DASH_SPD;
+      if (this._dashTimer <= 0) {
+        this.dashing = false;
+        this.vx = this._dashDir * 220;
+      }
+    }
+
+    // ── Horizontal movement ───────────────────────────────────────
+    if (!this.dashing) {
+      const spd = PLAYER_SPEED * (this.power.speed > 0 ? 1.65 : this.power.rapidFire > 0 ? 1.3 : 1);
+      if (inp.left()) {
+        this.vx = clamp(this.vx - PLAYER_ACCEL * dt, -spd, spd);
+        this.facingRight = false;
+      } else if (inp.right()) {
+        this.vx = clamp(this.vx + PLAYER_ACCEL * dt, -spd, spd);
+        this.facingRight = true;
+      } else {
+        if (Math.abs(this.vx) < 20) this.vx = 0;
+        else this.vx -= sign(this.vx) * PLAYER_DECEL * dt;
+      }
     }
 
     // ── Jump input ────────────────────────────────────────────────
@@ -2135,43 +2611,50 @@ class Player {
 
     if (this._jumpBuf > 0 && canJump) {
       this.vy = JUMP_VEL;
-      this._jumpBuf  = 0;
-      this._coyote   = 0;
-      this._jumpHeld = 0;
+      this._jumpBuf    = 0;
+      this._coyote     = 0;
+      this._jumpHeld   = 0;
       this._hasJumped2 = false;
       game.audio.jump();
       game.particles.jumpDust(this.x + this.w/2, this.y + this.h);
-    } else if (inp.jumpPressed() && !canJump && this.canDoubleJump && !this._hasJumped2) {
-      // Double jump
+    } else if (inp.jumpPressed() && !canJump && this.power.doubleJump > 0 && !this._hasJumped2) {
       this.vy = JUMP_VEL * 0.9;
       this._hasJumped2 = true;
       game.audio.doubleJump();
       game.particles.explosion(this.x + this.w/2, this.y + this.h, '#aa44ff', 10);
     }
 
-    // Jump hold (variable height)
     if (inp.jump() && this.vy < 0) {
       this._jumpHeld += dt;
       if (this._jumpHeld < JUMP_HOLD_MAX) {
         this.vy += GRAVITY * (JUMP_HOLD_REDUCE - 1) * dt;
       }
     } else if (inp.jumpReleased()) {
-      this._jumpHeld = JUMP_HOLD_MAX; // prevent further hold
+      this._jumpHeld = JUMP_HOLD_MAX;
     }
 
     // ── Shooting ──────────────────────────────────────────────────
-    const cd = this.rapidFire ? SHOOT_CD_RAPID : SHOOT_CD;
+    const cd = this.power.rapidFire > 0 ? SHOOT_CD_RAPID : SHOOT_CD;
     if (inp.shoot() && this._shootTimer <= 0) {
       this._shootTimer = cd;
       this._shootAnim  = 0.12;
-      const bx = this.facingRight ? this.x + this.w : this.x - 20;
-      const by = this.y + this.h * 0.35;
-      game.projectiles.push(new PlayerBolt(bx, by, this.facingRight ? 1 : -1));
+      const bx  = this.facingRight ? this.x + this.w : this.x - 20;
+      const by  = this.y + this.h * 0.35;
+      const dir = this.facingRight ? 1 : -1;
+      if (this.power.spread > 0) {
+        for (let i = -1; i <= 1; i++) {
+          game.projectiles.push(new PlayerBolt(bx, by, dir, i * 0.32 * PROJ_SPEED));
+        }
+      } else {
+        game.projectiles.push(new PlayerBolt(bx, by, dir, 0));
+      }
       game.audio.shoot();
     }
 
     // ── Gravity ───────────────────────────────────────────────────
-    this.vy = clamp(this.vy + GRAVITY * dt, -9999, MAX_FALL);
+    if (!this.dashing) {
+      this.vy = clamp(this.vy + GRAVITY * dt, -9999, MAX_FALL);
+    }
 
     // ── Coyote time ───────────────────────────────────────────────
     if (this.grounded) this._coyote = COYOTE_T;
@@ -2187,13 +2670,12 @@ class Player {
     this.y += this.vy * dt;
     this._resolveY(game.level, wasGrounded, dt);
 
-    // Clamping to world
+    // Clamp to world
     this.x = clamp(this.x, 0, game.level.worldW - this.w);
     if (this.y > game.level.worldH + 100) {
-      // fell into pit
       this.hurt(game);
-      this.x = game._spawnX;
-      this.y = game._spawnY;
+      this.x  = game._spawnX;
+      this.y  = game._spawnY;
       this.vx = 0; this.vy = 0;
     }
 
@@ -2216,17 +2698,17 @@ class Player {
         this._animFrame = (this._animFrame + 1) % 4;
       }
     } else if (!this.grounded) {
-      this._animFrame = 4; // jump/fall frame
+      this._animFrame = 4;
     } else {
       this._animFrame = 0;
     }
 
-    // Speed afterimage trail — spawn ghosts when moving fast
-    if (Math.abs(this.vx) > PLAYER_SPEED * 0.82) {
+    // Ghost trail (speed afterimage + dash)
+    if (this.dashing || Math.abs(this.vx) > PLAYER_SPEED * 0.82) {
       this._ghostTimer -= dt;
       if (this._ghostTimer <= 0) {
-        this._ghostTimer = 0.045;
-        this._ghosts.push({ x: this.x, y: this.y, life: 0.28, max: 0.28 });
+        this._ghostTimer = this.dashing ? 0.022 : 0.045;
+        this._ghosts.push({ x: this.x, y: this.y, life: 0.28, max: 0.28, dash: this.dashing });
       }
     }
     for (const g of this._ghosts) g.life -= dt;
@@ -2242,17 +2724,13 @@ class Player {
     for (let ty = ty0; ty <= ty1; ty++) {
       for (let tx = tx0; tx <= tx1; tx++) {
         const tile = level.getTile(tx, ty);
-        if (tile !== 1) continue; // only solid
+        if (tile !== 1) continue;
         const tileX = tx * T;
-        // Moving right → hit left side of tile
         if (this.vx > 0 && this.x + this.w > tileX && this.x < tileX) {
-          this.x  = tileX - this.w;
-          this.vx = 0;
+          this.x  = tileX - this.w; this.vx = 0;
         }
-        // Moving left → hit right side of tile
         if (this.vx < 0 && this.x < tileX + T && this.x + this.w > tileX + T) {
-          this.x  = tileX + T;
-          this.vx = 0;
+          this.x  = tileX + T; this.vx = 0;
         }
       }
     }
@@ -2268,35 +2746,23 @@ class Player {
       for (let tx = tx0; tx <= tx1; tx++) {
         const tile = level.getTile(tx, ty);
         if (tile === 0) continue;
-
         const tileY = ty * T;
 
         if (tile === 1) {
-          // Solid: both directions
           if (this.vy > 0 && this.y + this.h > tileY && this._prevY + this.h <= tileY + 1) {
-            this.y       = tileY - this.h;
-            this.vy      = 0;
-            this.grounded = true;
+            this.y = tileY - this.h; this.vy = 0; this.grounded = true;
           }
           if (this.vy < 0 && this.y < tileY + T && this._prevY >= tileY + T) {
-            this.y  = tileY + T;
-            this.vy = 0;
+            this.y = tileY + T; this.vy = 0;
           }
         } else if (tile === 2) {
-          // One-way: only land from above
           if (this.vy > 0 && this.y + this.h > tileY && this._prevY + this.h <= tileY + 2) {
-            this.y       = tileY - this.h;
-            this.vy      = 0;
-            this.grounded = true;
+            this.y = tileY - this.h; this.vy = 0; this.grounded = true;
           }
-        } else if (tile === 3) {
-          // Spike → hurt (handled via spike check elsewhere, or here)
-          // We call hurt from game loop, but mark grounded = false
         }
       }
     }
 
-    // Moving platforms (mp.w is already in pixels)
     for (const mp of level.movingPlatforms) {
       if (this.vy >= 0 &&
           this.x + this.w > mp.x && this.x < mp.x + mp.w &&
@@ -2304,26 +2770,21 @@ class Player {
         this.y       = mp.y - this.h;
         this.vy      = 0;
         this.grounded = true;
-        // Carry player with horizontal movement
         if (mp.axis === 'x') this.x += mp.vx * dt;
       }
     }
   }
 
-  // Called when player stomp-lands on enemy
   stompBounce() { this.vy = STOMP_BOUNCE; }
 
   render(ctx) {
-    if (this._dying) {
-      this._renderDying(ctx);
-      return;
-    }
+    if (this._dying) { this._renderDying(ctx); return; }
 
-    // Speed afterimages (drawn behind the body)
+    // Speed afterimages
     for (const g of this._ghosts) {
-      const a = (g.life / g.max) * 0.4;
+      const a = (g.life / g.max) * 0.42;
       ctx.globalAlpha = a;
-      ctx.fillStyle = '#00ddff';
+      ctx.fillStyle = g.dash ? '#ff44ff' : '#00ddff';
       ctx.beginPath();
       ctx.roundRect(g.x + 2, g.y + 8, this.w - 4, this.h - 14, 8);
       ctx.fill();
@@ -2337,24 +2798,45 @@ class Player {
     const cy = this.y + this.h / 2;
 
     // Squash/stretch
-    const landSq   = this._landAnim / 0.15;
-    const scaleX   = 1 + landSq * 0.25;
-    const scaleY   = 1 - landSq * 0.2;
-    const jumpStr  = !this.grounded && this.vy < 0 ? 0.12 : 0;
-    const totalSX  = scaleX + jumpStr * -0.1;
-    const totalSY  = scaleY + jumpStr * 0.12;
+    const landSq  = this._landAnim / 0.15;
+    const scaleX  = 1 + landSq * 0.25;
+    const scaleY  = 1 - landSq * 0.2;
+    const jumpStr = !this.grounded && this.vy < 0 ? 0.12 : 0;
+    const totalSX = scaleX + jumpStr * -0.1;
+    const totalSY = scaleY + jumpStr * 0.12;
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(totalSX, totalSY);
     if (!this.facingRight) ctx.scale(-1, 1);
-
     this._drawBody(ctx);
-
     ctx.restore();
 
+    // Dash aura
+    if (this.dashing) {
+      ctx.globalAlpha = 0.5;
+      const dg = ctx.createRadialGradient(cx, cy, 4, cx, cy, 36);
+      dg.addColorStop(0, '#ff44ff');
+      dg.addColorStop(1, 'transparent');
+      ctx.fillStyle = dg;
+      ctx.beginPath(); ctx.arc(cx, cy, 36, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Speed power aura
+    if (this.power.speed > 0) {
+      const pulse = 0.7 + 0.3 * Math.sin(Date.now() * 0.01);
+      ctx.globalAlpha = 0.28 * pulse;
+      const sg = ctx.createRadialGradient(cx, cy, 6, cx, cy, 38);
+      sg.addColorStop(0, '#ffee00');
+      sg.addColorStop(1, 'transparent');
+      ctx.fillStyle = sg;
+      ctx.beginPath(); ctx.arc(cx, cy, 38, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
     // Shield aura
-    if (this.shielded) {
+    if (this.power.shield > 0) {
       const pulse = 0.7 + 0.3 * Math.sin(Date.now() * 0.006);
       ctx.globalAlpha = 0.35 * pulse;
       const sg = ctx.createRadialGradient(cx, cy, 10, cx, cy, 32);
@@ -2368,13 +2850,37 @@ class Player {
       ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI * 2); ctx.stroke();
       ctx.globalAlpha = 1;
     }
+
+    // Magnet field
+    if (this.power.magnet > 0) {
+      const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.008);
+      ctx.globalAlpha = 0.18 * pulse;
+      ctx.strokeStyle = '#ff44ff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath(); ctx.arc(cx, cy, 160, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
+    // Dash cooldown indicator (small arc below player)
+    if (this._dashCD > 0) {
+      const frac = 1 - this._dashCD / DASH_CD;
+      ctx.globalAlpha = 0.5;
+      ctx.strokeStyle = '#00ffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, this.y + this.h + 6, 10, -Math.PI/2, -Math.PI/2 + frac * Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
 
   _drawBody(ctx) {
-    const f = this._animFrame;
+    const f     = this._animFrame;
     const shoot = this._shootAnim > 0;
 
-    // Body shadow
+    // Shadow
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = '#000';
     ctx.beginPath();
@@ -2389,12 +2895,12 @@ class Player {
     ctx.fillStyle = aura;
     ctx.beginPath(); ctx.arc(0, 0, 28, 0, Math.PI * 2); ctx.fill();
 
-    // Legs (animated)
+    // Legs
     ctx.fillStyle = '#006699';
-    const legY = PH/2 - 4;
+    const legY   = PH/2 - 4;
     const legOff = [0, 6, 0, -6][f % 4];
-    ctx.fillRect(-14, legY + legOff,     10, 12); // left leg
-    ctx.fillRect(  4, legY - legOff,     10, 12); // right leg
+    ctx.fillRect(-14, legY + legOff, 10, 12);
+    ctx.fillRect(  4, legY - legOff, 10, 12);
 
     // Body
     const bodyGrad = ctx.createLinearGradient(-PW/2, -PH/2, PW/2, PH/2);
@@ -2416,16 +2922,14 @@ class Player {
     ctx.fillStyle = '#0088bb';
     const armY = -PH/2 + 20;
     if (shoot) {
-      // Right arm extended forward (shoot)
       ctx.fillRect(PW/2 - 2, armY - 3, 18, 8);
-      // Energy ball at tip
       ctx.fillStyle = '#00ffff';
       ctx.beginPath(); ctx.arc(PW/2 + 16, armY + 1, 5, 0, Math.PI * 2); ctx.fill();
     } else {
       ctx.fillRect(PW/2 - 2, armY, 10, 7);
     }
     ctx.fillStyle = '#0088bb';
-    ctx.fillRect(-PW/2 - 8, armY, 10, 7); // left arm
+    ctx.fillRect(-PW/2 - 8, armY, 10, 7);
 
     // Head
     const headGrad = ctx.createRadialGradient(-3, -PH/2 - 2, 3, 0, -PH/2, 14);
@@ -2450,12 +2954,11 @@ class Player {
     ctx.beginPath(); ctx.arc(6, -PH/2 + 3, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(-4.5, -PH/2 + 3, 2, 0, Math.PI * 2); ctx.fill();
 
-    // Eye glow
     ctx.fillStyle = 'rgba(100,220,255,0.8)';
     ctx.beginPath(); ctx.arc(7, -PH/2 + 1, 1, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(-3.5, -PH/2 + 1, 0.8, 0, Math.PI * 2); ctx.fill();
 
-    // Energy core (chest)
+    // Energy core
     const t = Date.now() * 0.003;
     ctx.fillStyle = `hsl(${190 + Math.sin(t)*20},100%,65%)`;
     ctx.beginPath(); ctx.arc(0, -4, 5, 0, Math.PI * 2); ctx.fill();
@@ -2464,7 +2967,7 @@ class Player {
   }
 
   _renderDying(ctx) {
-    const t = Math.min(this._deathAnim / 1.5, 1);
+    const t  = Math.min(this._deathAnim / 1.5, 1);
     const cx = this.x + this.w / 2;
     const cy = this.y + this.h / 2;
     ctx.globalAlpha = 1 - t;
@@ -2479,7 +2982,141 @@ class Player {
 }
 
 
+// ===================== Checkpoint.js =====================
+
+
+
+const SAVE_KEY = 'nebulaDash_checkpoint';
+
+function saveCheckpoint(game, checkpointId) {
+  try {
+    const data = {
+      levelIndex:   game.currentLevelIndex,
+      score:        game.score,
+      lives:        game.lives,
+      checkpointId,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (_) { /* incognito / storage full */ }
+}
+
+function loadCheckpoint() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+
+function clearCheckpoint() {
+  try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
+}
+
+class Checkpoint {
+  constructor(tx, ty, id) {
+    this.x    = tx * T;
+    this.y    = ty * T - T;            // stands 1 tile tall, sits on the tile row
+    this.w    = T * 0.6;
+    this.h    = T * 1.6;
+    this.id   = id;
+    this._triggered = false;
+    this._time = Math.random() * Math.PI * 2;
+    this._activateAnim = 0;
+  }
+
+  update(dt, game) {
+    this._time += dt * 2;
+    if (this._activateAnim > 0) this._activateAnim = Math.max(0, this._activateAnim - dt * 2);
+
+    if (!this._triggered) {
+      const p = game.player;
+      if (rectOverlap(this.x - 8, this.y, this.w + 16, this.h, p.x, p.y, p.w, p.h)) {
+        this._triggered = true;
+        this._activateAnim = 1;
+
+        // Update spawn point
+        game._spawnX = this.x;
+        game._spawnY = this.y;
+
+        // Persist to localStorage
+        saveCheckpoint(game, this.id);
+
+        // Juice
+        game.audio.collectPowerup();
+        game.particles.explosion(this.x + this.w/2, this.y + this.h/2, '#00ffcc', 20);
+        game.addFloater(this.x + this.w/2, this.y - 10, '✓ CHECKPOINT', '#00ffcc');
+        game.camera.shake(4);
+        game.flash('#00ffcc', 0.18);
+      }
+    }
+  }
+
+  render(ctx) {
+    const cx   = this.x + this.w/2;
+    const t    = this._time;
+    const act  = this._triggered;
+    const pop  = this._activateAnim;
+    const color = act ? '#00ffcc' : '#888888';
+    const gAlpha = act ? 0.35 + 0.15 * Math.sin(t) : 0.12;
+
+    // Pillar glow
+    ctx.globalAlpha = gAlpha;
+    const glow = ctx.createRadialGradient(cx, this.y + this.h/2, 4, cx, this.y + this.h/2, 36);
+    glow.addColorStop(0, color);
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, this.y + this.h/2, 36, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Pillar shaft
+    const shaftGrad = ctx.createLinearGradient(this.x, 0, this.x + this.w, 0);
+    shaftGrad.addColorStop(0, act ? '#005533' : '#333333');
+    shaftGrad.addColorStop(0.5, act ? '#00aa66' : '#555555');
+    shaftGrad.addColorStop(1, act ? '#005533' : '#333333');
+    ctx.fillStyle = shaftGrad;
+    ctx.fillRect(this.x + this.w * 0.2, this.y + 12, this.w * 0.6, this.h - 12);
+
+    // Base platform
+    ctx.fillStyle = act ? '#00664d' : '#444444';
+    ctx.beginPath();
+    ctx.roundRect(this.x, this.y + this.h - 10, this.w, 10, 3);
+    ctx.fill();
+
+    // Top orb
+    const orbY   = this.y + 8 + (act ? Math.sin(t) * 4 : 0);
+    const orbR   = act ? 10 + pop * 6 : 8;
+    const orbAlpha = act ? 0.9 : 0.4;
+    ctx.globalAlpha = orbAlpha;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(cx, orbY, orbR, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(cx - 3, orbY - 3, orbR * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Orbiting sparks when active
+    if (act) {
+      for (let i = 0; i < 3; i++) {
+        const a  = t * 2 + (i / 3) * Math.PI * 2;
+        const sx = cx + Math.cos(a) * 16;
+        const sy = orbY + Math.sin(a) * 7;
+        ctx.globalAlpha = 0.7;
+        ctx.fillStyle = '#00ffcc';
+        ctx.beginPath(); ctx.arc(sx, sy, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Label
+    ctx.fillStyle = act ? 'rgba(0,255,200,0.8)' : 'rgba(150,150,150,0.5)';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SAVE', cx, this.y + this.h - 4);
+  }
+}
+
+
 // ===================== Level.js =====================
+
 
 
 
@@ -2578,13 +3215,15 @@ class Level {
         case 'crawler': enemies.push(new Crawler(e.tx, e.ty)); break;
         case 'bouncer': enemies.push(new Bouncer(e.tx, e.ty)); break;
         case 'shooter': enemies.push(new Shooter(e.tx, e.ty)); break;
+        case 'flyer':   enemies.push(new Flyer(e.tx, e.ty));   break;
       }
     }
     for (const c of (data.crystals || []))  collectibles.push(new Crystal(c.tx, c.ty));
     for (const p of (data.powerUps || []))  collectibles.push(new PowerUp(p.tx, p.ty, p.type));
     if (data.boss) boss = new Boss(data.boss.tx, data.boss.ty);
 
-    return { enemies, collectibles, boss };
+    const checkpoints = (data.checkpoints || []).map((cp, i) => new Checkpoint(cp.tx, cp.ty, i));
+    return { enemies, collectibles, boss, checkpoints };
   }
 
   getTile(tx, ty) {
@@ -2767,10 +3406,9 @@ class Level {
 
 
 // ===================== LevelData.js =====================
-// Level data — coordinates are in tile units unless noted
+// Level data — coordinates are in tile units
 // Tile types: 1=solid, 2=one-way platform, 3=spike
 
-// Helper: fill a row of tiles
 function row(type, x0, x1, y) {
   const tiles = [];
   for (let x = x0; x <= x1; x++) tiles.push({ x, y, type });
@@ -2786,7 +3424,6 @@ const LEVEL1 = {
   tileH: 14,
 
   tiles: [
-    // Ground rows 12–13
     ...row(1,  0,  8, 12), ...row(1,  0,  8, 13),
     ...row(1, 11, 20, 12), ...row(1, 11, 20, 13),
     ...row(1, 22, 32, 12), ...row(1, 22, 32, 13),
@@ -2794,7 +3431,6 @@ const LEVEL1 = {
     ...row(1, 47, 59, 12), ...row(1, 47, 59, 13),
     ...row(1, 61, 65, 12), ...row(1, 61, 65, 13),
 
-    // Floating one-way platforms
     ...row(2,  4,  6,  9),
     ...row(2, 12, 14,  8),
     ...row(2, 17, 19,  9),
@@ -2806,12 +3442,9 @@ const LEVEL1 = {
     ...row(2, 55, 57,  7),
     ...row(2, 63, 65,  9),
 
-    // Spikes in gaps
-    { x:  9, y: 12, type: 3 },
-    { x: 10, y: 12, type: 3 },
+    { x:  9, y: 12, type: 3 }, { x: 10, y: 12, type: 3 },
     { x: 21, y: 12, type: 3 },
-    { x: 33, y: 12, type: 3 },
-    { x: 34, y: 12, type: 3 },
+    { x: 33, y: 12, type: 3 }, { x: 34, y: 12, type: 3 },
     { x: 46, y: 12, type: 3 },
     { x: 60, y: 12, type: 3 },
   ],
@@ -2825,8 +3458,10 @@ const LEVEL1 = {
     { type: 'crawler', tx:  5, ty: 11 },
     { type: 'crawler', tx: 15, ty: 11 },
     { type: 'bouncer', tx: 26, ty: 11 },
+    { type: 'flyer',   tx: 30, ty:  4 },
     { type: 'shooter', tx: 40, ty: 11 },
     { type: 'crawler', tx: 53, ty: 11 },
+    { type: 'flyer',   tx: 57, ty:  4 },
   ],
 
   crystals: [
@@ -2843,8 +3478,15 @@ const LEVEL1 = {
   ],
 
   powerUps: [
-    { type: 'doubleJump', tx: 29, ty: 5 },
-    { type: 'rapidFire',  tx: 50, ty: 7 },
+    { type: 'doubleJump', tx: 29, ty: 5  },
+    { type: 'rapidFire',  tx: 50, ty: 7  },
+    { type: 'spread',     tx: 41, ty: 6  },
+    { type: 'magnet',     tx: 14, ty: 7  },
+  ],
+
+  checkpoints: [
+    { tx: 22, ty: 11 },
+    { tx: 47, ty: 11 },
   ],
 
   playerStart: { tx: 2, ty: 11 },
@@ -2860,7 +3502,6 @@ const LEVEL2 = {
   tileH: 14,
 
   tiles: [
-    // Ground — more gaps
     ...row(1,  0,  6, 12), ...row(1,  0,  6, 13),
     ...row(1,  9, 16, 12), ...row(1,  9, 16, 13),
     ...row(1, 19, 26, 12), ...row(1, 19, 26, 13),
@@ -2870,7 +3511,6 @@ const LEVEL2 = {
     ...row(1, 62, 72, 12), ...row(1, 62, 72, 13),
     ...row(1, 74, 79, 12), ...row(1, 74, 79, 13),
 
-    // Elevated platforms
     ...row(2,  3,  5, 10),
     ...row(2,  9, 11,  9),
     ...row(2, 14, 16,  7),
@@ -2887,11 +3527,9 @@ const LEVEL2 = {
     ...row(2, 73, 75,  9),
     ...row(2, 77, 79,  7),
 
-    // Wall sections (semi-enclosed area)
-    ...row(1,  27, 27, 10), ...row(1, 27, 27, 11), // right wall of gap
-    ...row(1,  48, 48, 10), ...row(1, 48, 48, 11),
+    ...row(1, 27, 27, 10), ...row(1, 27, 27, 11),
+    ...row(1, 48, 48, 10), ...row(1, 48, 48, 11),
 
-    // Spikes
     { x:  7, y: 12, type: 3 }, { x:  8, y: 12, type: 3 },
     { x: 17, y: 12, type: 3 }, { x: 18, y: 12, type: 3 },
     { x: 27, y: 12, type: 3 }, { x: 28, y: 12, type: 3 },
@@ -2913,10 +3551,13 @@ const LEVEL2 = {
   enemies: [
     { type: 'crawler', tx:  4, ty: 11 },
     { type: 'bouncer', tx: 12, ty: 11 },
+    { type: 'flyer',   tx: 15, ty:  5 },
     { type: 'shooter', tx: 22, ty: 11 },
     { type: 'crawler', tx: 31, ty: 11 },
+    { type: 'flyer',   tx: 36, ty:  4 },
     { type: 'bouncer', tx: 42, ty: 11 },
     { type: 'shooter', tx: 54, ty: 11 },
+    { type: 'flyer',   tx: 60, ty:  5 },
     { type: 'crawler', tx: 64, ty: 11 },
     { type: 'bouncer', tx: 75, ty: 11 },
   ],
@@ -2942,8 +3583,16 @@ const LEVEL2 = {
   powerUps: [
     { type: 'shield',     tx: 14, ty: 6 },
     { type: 'doubleJump', tx: 45, ty: 5 },
-    { type: 'rapidFire',  tx: 68, ty: 5 },
+    { type: 'spread',     tx: 30, ty: 6 },
+    { type: 'speed',      tx: 58, ty: 6 },
+    { type: 'magnet',     tx: 68, ty: 5 },
+    { type: 'rapidFire',  tx: 73, ty: 8 },
     { type: 'life',       tx: 77, ty: 6 },
+  ],
+
+  checkpoints: [
+    { tx: 19, ty: 11 },
+    { tx: 51, ty: 11 },
   ],
 
   playerStart: { tx: 2, ty: 11 },
@@ -2959,10 +3608,8 @@ const LEVEL3 = {
   tileH: 14,
 
   tiles: [
-    // Ground
     ...row(1,  0, 31, 12),
     ...row(1,  0, 31, 13),
-    // Side walls
     ...row(1,  0,  0,  0), ...row(1,  0,  0,  1), ...row(1,  0,  0,  2),
     ...row(1,  0,  0,  3), ...row(1,  0,  0,  4), ...row(1,  0,  0,  5),
     ...row(1,  0,  0,  6), ...row(1,  0,  0,  7), ...row(1,  0,  0,  8),
@@ -2972,7 +3619,6 @@ const LEVEL3 = {
     ...row(1, 31, 31,  6), ...row(1, 31, 31,  7), ...row(1, 31, 31,  8),
     ...row(1, 31, 31,  9), ...row(1, 31, 31, 10), ...row(1, 31, 31, 11),
 
-    // Platforms for dodging
     ...row(2,  3,  6,  8),
     ...row(2, 12, 14,  6),
     ...row(2, 17, 19,  6),
@@ -2982,7 +3628,6 @@ const LEVEL3 = {
   ],
 
   movingPlatforms: [],
-
   enemies: [],
   boss: { tx: 18, ty: 11 },
 
@@ -2995,10 +3640,15 @@ const LEVEL3 = {
   ],
 
   powerUps: [
-    { type: 'shield',    tx: 13, ty: 5 },
-    { type: 'rapidFire', tx: 18, ty: 5 },
-    { type: 'life',      tx:  5, ty: 7 },
+    { type: 'shield',     tx: 13, ty: 5  },
+    { type: 'rapidFire',  tx: 18, ty: 5  },
+    { type: 'spread',     tx:  8, ty: 8  },
+    { type: 'speed',      tx: 23, ty: 8  },
+    { type: 'nuke',       tx: 16, ty: 5  },
+    { type: 'life',       tx:  5, ty: 7  },
   ],
+
+  checkpoints: [],
 
   playerStart: { tx: 3, ty: 11 },
   exit: null,
@@ -3066,21 +3716,57 @@ class UI {
     ctx.font = '12px monospace';
     ctx.fillText(game.level?.data.name || '', W / 2, 38);
 
-    // Active power-up
+    // Active power-ups (new multi-power system)
     const p = game.player;
-    if (p && p.activePowerUp && p.powerUpTimer > 0) {
-      ctx.textAlign = 'right';
-      const icons = { doubleJump:'✦ DOUBLE', rapidFire:'⚡ RAPID', shield:'◈ SHIELD' };
-      const label = icons[p.activePowerUp] || p.activePowerUp;
-      const frac  = p.powerUpTimer / 20;
-      ctx.fillStyle = '#ffcc00';
-      ctx.font = 'bold 13px monospace';
-      ctx.fillText(label, W - 14, 16);
-      // Timer bar
-      ctx.fillStyle = 'rgba(255,200,0,0.25)';
-      ctx.fillRect(W - 120, 24, 106, 6);
-      ctx.fillStyle = '#ffcc00';
-      ctx.fillRect(W - 120, 24, 106 * Math.min(frac, 1), 6);
+    if (p) {
+      const icons = {
+        doubleJump: { label: '✦ JUMP',   color: '#aa44ff', max: 22 },
+        rapidFire:  { label: '⚡ RAPID',  color: '#ffaa00', max: 14 },
+        shield:     { label: '◈ SHIELD', color: '#44aaff', max: 18 },
+        spread:     { label: '✷ SPREAD', color: '#00ff88', max: 16 },
+        magnet:     { label: '⊕ MAGNET', color: '#ff44ff', max: 14 },
+        speed:      { label: '▶▶ SPEED', color: '#ffee00', max: 10 },
+      };
+      let row = 0;
+      for (const [key, info] of Object.entries(icons)) {
+        if (p.power[key] > 0) {
+          const frac = Math.min(p.power[key] / info.max, 1);
+          const by = 8 + row * 18;
+          ctx.textAlign = 'right';
+          ctx.fillStyle = info.color;
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText(info.label, W - 14, by + 6);
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          ctx.fillRect(W - 86, by + 10, 72, 4);
+          ctx.fillStyle = info.color;
+          ctx.fillRect(W - 86, by + 10, 72 * frac, 4);
+          row++;
+        }
+      }
+    }
+
+    // Style rank meter
+    if (game.combo > 1 && game._comboTimer > 0) {
+      const ranks      = ['D',       'C',       'B',       'A',       'S',       'SS',      'SSS'];
+      const thresh     = [0,          2,          4,          7,         10,        15,        25];
+      const rankColors = ['#888888', '#44ff44', '#44aaff', '#aa44ff', '#ffcc00', '#ff8800', '#ff4400'];
+      let rank = 0;
+      for (let i = thresh.length - 1; i >= 0; i--) {
+        if (game.combo >= thresh[i]) { rank = i; break; }
+      }
+      ctx.save();
+      ctx.translate(W - 50, H - 60);
+      const scale = 1 + 0.15 * Math.sin(Date.now() * 0.008);
+      ctx.scale(scale, scale);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = rankColors[rank];
+      ctx.shadowColor = rankColors[rank];
+      ctx.shadowBlur = 14;
+      ctx.font = `bold ${ranks[rank].length > 1 ? 28 : 36}px monospace`;
+      ctx.fillText(ranks[rank], 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
     }
 
     // Combo multiplier
@@ -3111,7 +3797,7 @@ class UI {
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('← → / A D = Move   SPACE / W = Jump   Z / J = Shoot   P = Pause', W/2, H - 18);
+      ctx.fillText('← → Move   SPACE Jump   Z Shoot   SHIFT Dash   P Pause', W/2, H - 18);
       ctx.globalAlpha = 1;
     }
   }
@@ -3163,7 +3849,7 @@ class UI {
     // Controls
     ctx.fillStyle = 'rgba(150,180,220,0.7)';
     ctx.font = '13px monospace';
-    ctx.fillText('← → Move   SPACE Jump   Z Shoot   P Pause', W/2, H/2 + 90);
+    ctx.fillText('← → Move   SPACE Jump   Z Shoot   SHIFT Dash   P Pause', W/2, H/2 + 90);
 
     // Small character preview
     this._drawNovaPrev(ctx, W/2 - 200, H/2 + 20, t);
@@ -3171,7 +3857,7 @@ class UI {
     // Version
     ctx.fillStyle = 'rgba(100,130,180,0.5)';
     ctx.font = '11px monospace';
-    ctx.fillText('3 LEVELS  •  BOSS FIGHT  •  POWER-UPS', W/2, H - 20);
+    ctx.fillText('3 LEVELS  •  4-PHASE BOSS  •  CHECKPOINTS  •  DASH', W/2, H - 20);
   }
 
   _drawNovaPrev(ctx, x, y, t) {
@@ -3339,6 +4025,7 @@ class UI {
 
 
 
+
 class Game {
   constructor(canvas) {
     this.canvas  = canvas;
@@ -3361,6 +4048,7 @@ class Game {
     this.projectiles  = [];
     this.collectibles = [];
     this.boss         = null;
+    this.checkpoints  = [];
 
     this._spawnX   = 0;
     this._spawnY   = 0;
@@ -3375,13 +4063,14 @@ class Game {
     this._wonLevel = false;
 
     // ── Juice state ──────────────────────────────────────────────
-    this._hitStop   = 0;        // freeze-frame timer (seconds)
-    this._flashAlpha = 0;       // full-screen flash alpha
+    this._hitStop    = 0;
+    this._flashAlpha = 0;
     this._flashColor = '#ffffff';
-    this.combo       = 0;       // kill combo multiplier
-    this._comboTimer = 0;       // time left before combo resets
-    this.floaters    = [];      // floating score popups
-    this._ambientTimer = 0;     // ambient particle spawn timer
+    this.combo       = 0;
+    this._comboTimer = 0;
+    this.floaters    = [];
+    this._ambientTimer = 0;
+    this._slowMo     = 1.0;    // slow-motion multiplier (1 = normal)
   }
 
   // ── Juice helpers ──────────────────────────────────────────────
@@ -3412,22 +4101,35 @@ class Game {
   }
 
   start() {
-    this.lives = PLAYER_LIVES;
-    this.score = 0;
-    this.currentLevelIndex = 0;
-    this.audio.stopMusic();
-    this._loadLevel(0);   // sets state to 'playing' (or 'bossIntro' for boss levels)
-    this.state = 'playing';
+    // Check for saved checkpoint
+    const cp = loadCheckpoint();
+    if (cp && cp.levelIndex < ALL_LEVELS.length) {
+      this.lives = cp.lives || PLAYER_LIVES;
+      this.score = cp.score || 0;
+      this.currentLevelIndex = cp.levelIndex;
+      this.audio.stopMusic();
+      this._loadLevel(cp.levelIndex);
+      this.state = 'playing';
+    } else {
+      this.lives = PLAYER_LIVES;
+      this.score = 0;
+      this.currentLevelIndex = 0;
+      this.audio.stopMusic();
+      this._loadLevel(0);
+      this.state = 'playing';
+    }
     this._hintTimer = 8;
+    this._slowMo = 1.0;
   }
 
   _loadLevel(index) {
     const data = ALL_LEVELS[index];
     this.level  = new Level(data);
-    const { enemies, collectibles, boss } = Level.buildEntities(data);
+    const { enemies, collectibles, boss, checkpoints } = Level.buildEntities(data);
     this.enemies      = enemies;
     this.collectibles = collectibles;
     this.boss         = boss;
+    this.checkpoints  = checkpoints;
     this.projectiles  = [];
 
     const sp = data.playerStart;
@@ -3523,8 +4225,13 @@ class Game {
   _updatePlaying(dt) {
     const level = this.level;
 
+    // Slow-motion: recover back toward 1.0 over ~2s
+    if (this._slowMo < 1.0) {
+      this._slowMo = Math.min(1.0, this._slowMo + dt * 0.5);
+    }
+    dt *= this._slowMo;
+
     // Hit-stop: freeze the world briefly for punchy impacts.
-    // Camera keeps updating so screen-shake still animates.
     if (this._hitStop > 0) {
       this._hitStop -= dt;
       this.camera.update(dt);
@@ -3587,6 +4294,9 @@ class Game {
       if (!c.dead) c.update(dt, this);
     }
     this.collectibles = this.collectibles.filter(c => !c.dead);
+
+    // Checkpoints
+    for (const cp of this.checkpoints) cp.update(dt, this);
 
     // Particles
     this.particles.update(dt);
@@ -3652,6 +4362,7 @@ class Game {
 
   triggerWin() {
     this._wonLevel = true;
+    clearCheckpoint(); // game beaten — wipe the save
     setTimeout(() => {
       this.state = 'win';
       this.audio.stopMusic();
@@ -3680,6 +4391,9 @@ class Game {
 
     // Level tiles
     this.level.render(ctx, cam);
+
+    // Checkpoints (behind everything)
+    for (const cp of this.checkpoints) cp.render(ctx);
 
     // Collectibles
     for (const c of this.collectibles) if (!c.dead) c.render(ctx);

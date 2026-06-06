@@ -1,7 +1,6 @@
-// Level data — coordinates are in tile units unless noted
+// Level data — coordinates are in tile units
 // Tile types: 1=solid, 2=one-way platform, 3=spike
 
-// Helper: fill a row of tiles
 function row(type, x0, x1, y) {
   const tiles = [];
   for (let x = x0; x <= x1; x++) tiles.push({ x, y, type });
@@ -17,7 +16,6 @@ export const LEVEL1 = {
   tileH: 14,
 
   tiles: [
-    // Ground rows 12–13
     ...row(1,  0,  8, 12), ...row(1,  0,  8, 13),
     ...row(1, 11, 20, 12), ...row(1, 11, 20, 13),
     ...row(1, 22, 32, 12), ...row(1, 22, 32, 13),
@@ -25,7 +23,6 @@ export const LEVEL1 = {
     ...row(1, 47, 59, 12), ...row(1, 47, 59, 13),
     ...row(1, 61, 65, 12), ...row(1, 61, 65, 13),
 
-    // Floating one-way platforms
     ...row(2,  4,  6,  9),
     ...row(2, 12, 14,  8),
     ...row(2, 17, 19,  9),
@@ -37,12 +34,9 @@ export const LEVEL1 = {
     ...row(2, 55, 57,  7),
     ...row(2, 63, 65,  9),
 
-    // Spikes in gaps
-    { x:  9, y: 12, type: 3 },
-    { x: 10, y: 12, type: 3 },
+    { x:  9, y: 12, type: 3 }, { x: 10, y: 12, type: 3 },
     { x: 21, y: 12, type: 3 },
-    { x: 33, y: 12, type: 3 },
-    { x: 34, y: 12, type: 3 },
+    { x: 33, y: 12, type: 3 }, { x: 34, y: 12, type: 3 },
     { x: 46, y: 12, type: 3 },
     { x: 60, y: 12, type: 3 },
   ],
@@ -56,8 +50,10 @@ export const LEVEL1 = {
     { type: 'crawler', tx:  5, ty: 11 },
     { type: 'crawler', tx: 15, ty: 11 },
     { type: 'bouncer', tx: 26, ty: 11 },
+    { type: 'flyer',   tx: 30, ty:  4 },
     { type: 'shooter', tx: 40, ty: 11 },
     { type: 'crawler', tx: 53, ty: 11 },
+    { type: 'flyer',   tx: 57, ty:  4 },
   ],
 
   crystals: [
@@ -74,8 +70,15 @@ export const LEVEL1 = {
   ],
 
   powerUps: [
-    { type: 'doubleJump', tx: 29, ty: 5 },
-    { type: 'rapidFire',  tx: 50, ty: 7 },
+    { type: 'doubleJump', tx: 29, ty: 5  },
+    { type: 'rapidFire',  tx: 50, ty: 7  },
+    { type: 'spread',     tx: 41, ty: 6  },
+    { type: 'magnet',     tx: 14, ty: 7  },
+  ],
+
+  checkpoints: [
+    { tx: 22, ty: 11 },
+    { tx: 47, ty: 11 },
   ],
 
   playerStart: { tx: 2, ty: 11 },
@@ -91,7 +94,6 @@ export const LEVEL2 = {
   tileH: 14,
 
   tiles: [
-    // Ground — more gaps
     ...row(1,  0,  6, 12), ...row(1,  0,  6, 13),
     ...row(1,  9, 16, 12), ...row(1,  9, 16, 13),
     ...row(1, 19, 26, 12), ...row(1, 19, 26, 13),
@@ -101,7 +103,6 @@ export const LEVEL2 = {
     ...row(1, 62, 72, 12), ...row(1, 62, 72, 13),
     ...row(1, 74, 79, 12), ...row(1, 74, 79, 13),
 
-    // Elevated platforms
     ...row(2,  3,  5, 10),
     ...row(2,  9, 11,  9),
     ...row(2, 14, 16,  7),
@@ -118,11 +119,9 @@ export const LEVEL2 = {
     ...row(2, 73, 75,  9),
     ...row(2, 77, 79,  7),
 
-    // Wall sections (semi-enclosed area)
-    ...row(1,  27, 27, 10), ...row(1, 27, 27, 11), // right wall of gap
-    ...row(1,  48, 48, 10), ...row(1, 48, 48, 11),
+    ...row(1, 27, 27, 10), ...row(1, 27, 27, 11),
+    ...row(1, 48, 48, 10), ...row(1, 48, 48, 11),
 
-    // Spikes
     { x:  7, y: 12, type: 3 }, { x:  8, y: 12, type: 3 },
     { x: 17, y: 12, type: 3 }, { x: 18, y: 12, type: 3 },
     { x: 27, y: 12, type: 3 }, { x: 28, y: 12, type: 3 },
@@ -144,10 +143,13 @@ export const LEVEL2 = {
   enemies: [
     { type: 'crawler', tx:  4, ty: 11 },
     { type: 'bouncer', tx: 12, ty: 11 },
+    { type: 'flyer',   tx: 15, ty:  5 },
     { type: 'shooter', tx: 22, ty: 11 },
     { type: 'crawler', tx: 31, ty: 11 },
+    { type: 'flyer',   tx: 36, ty:  4 },
     { type: 'bouncer', tx: 42, ty: 11 },
     { type: 'shooter', tx: 54, ty: 11 },
+    { type: 'flyer',   tx: 60, ty:  5 },
     { type: 'crawler', tx: 64, ty: 11 },
     { type: 'bouncer', tx: 75, ty: 11 },
   ],
@@ -173,8 +175,16 @@ export const LEVEL2 = {
   powerUps: [
     { type: 'shield',     tx: 14, ty: 6 },
     { type: 'doubleJump', tx: 45, ty: 5 },
-    { type: 'rapidFire',  tx: 68, ty: 5 },
+    { type: 'spread',     tx: 30, ty: 6 },
+    { type: 'speed',      tx: 58, ty: 6 },
+    { type: 'magnet',     tx: 68, ty: 5 },
+    { type: 'rapidFire',  tx: 73, ty: 8 },
     { type: 'life',       tx: 77, ty: 6 },
+  ],
+
+  checkpoints: [
+    { tx: 19, ty: 11 },
+    { tx: 51, ty: 11 },
   ],
 
   playerStart: { tx: 2, ty: 11 },
@@ -190,10 +200,8 @@ export const LEVEL3 = {
   tileH: 14,
 
   tiles: [
-    // Ground
     ...row(1,  0, 31, 12),
     ...row(1,  0, 31, 13),
-    // Side walls
     ...row(1,  0,  0,  0), ...row(1,  0,  0,  1), ...row(1,  0,  0,  2),
     ...row(1,  0,  0,  3), ...row(1,  0,  0,  4), ...row(1,  0,  0,  5),
     ...row(1,  0,  0,  6), ...row(1,  0,  0,  7), ...row(1,  0,  0,  8),
@@ -203,7 +211,6 @@ export const LEVEL3 = {
     ...row(1, 31, 31,  6), ...row(1, 31, 31,  7), ...row(1, 31, 31,  8),
     ...row(1, 31, 31,  9), ...row(1, 31, 31, 10), ...row(1, 31, 31, 11),
 
-    // Platforms for dodging
     ...row(2,  3,  6,  8),
     ...row(2, 12, 14,  6),
     ...row(2, 17, 19,  6),
@@ -213,7 +220,6 @@ export const LEVEL3 = {
   ],
 
   movingPlatforms: [],
-
   enemies: [],
   boss: { tx: 18, ty: 11 },
 
@@ -226,10 +232,15 @@ export const LEVEL3 = {
   ],
 
   powerUps: [
-    { type: 'shield',    tx: 13, ty: 5 },
-    { type: 'rapidFire', tx: 18, ty: 5 },
-    { type: 'life',      tx:  5, ty: 7 },
+    { type: 'shield',     tx: 13, ty: 5  },
+    { type: 'rapidFire',  tx: 18, ty: 5  },
+    { type: 'spread',     tx:  8, ty: 8  },
+    { type: 'speed',      tx: 23, ty: 8  },
+    { type: 'nuke',       tx: 16, ty: 5  },
+    { type: 'life',       tx:  5, ty: 7  },
   ],
+
+  checkpoints: [],
 
   playerStart: { tx: 3, ty: 11 },
   exit: null,

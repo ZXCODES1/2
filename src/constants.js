@@ -37,6 +37,11 @@ export const SC_STOMP   = 100;
 export const SC_SHOOT   = 150;
 export const SC_BOSS_HIT = 50;
 
+// Dash
+export const DASH_CD   = 1.4;   // cooldown seconds after a dash
+export const DASH_DUR  = 0.16;  // active dash duration seconds
+export const DASH_SPD  = 880;   // dash velocity px/s
+
 // Tile types
 export const TILE_EMPTY  = 0;
 export const TILE_SOLID  = 1;

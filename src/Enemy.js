@@ -1,4 +1,4 @@
-import { T, SC_STOMP, SC_SHOOT, CRAWLER_SPEED, BOUNCER_SPEED, SHOOTER_SPEED } from './constants.js';
+import { T, SC_STOMP, SC_SHOOT, CRAWLER_SPEED, BOUNCER_SPEED, SHOOTER_SPEED, ENEMY_PROJ_SPD } from './constants.js';
 import { rectOverlap, rnd, rndInt } from './utils.js';
 import { EnemyBullet } from './Projectile.js';
 
@@ -315,6 +315,88 @@ export class Bouncer extends Enemy {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('2', cx, cy - 24);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── Flyer: aerial drone that drops bombs ───────────────────────────────────
+export class Flyer extends Enemy {
+  constructor(tx, ty) {
+    super(tx, ty, 32, 24);
+    this.hp = 2;
+    this._floatY     = this.y;
+    this._hoverPhase = Math.random() * Math.PI * 2;
+    this._shootTimer = rnd(1.5, 3.0);
+    this.vx = 70 * (Math.random() < 0.5 ? 1 : -1);
+  }
+  _deathColor() { return '#ffaa00'; }
+  _applyGravity(dt) { /* hover: no gravity */ }
+
+  update(dt, game) {
+    this._time += dt * 2;
+    this.invincible = Math.max(0, this.invincible - dt);
+    this._hoverPhase += dt * 2.5;
+
+    this.y = this._floatY + Math.sin(this._hoverPhase) * 8;
+    this.x += this.vx * dt;
+    this.dir = this.vx > 0 ? 1 : -1;
+
+    // Bounce off walls
+    const ahead = this.vx > 0 ? this.x + this.w + 4 : this.x - 4;
+    if (game.level.getTile(Math.floor(ahead / T), Math.floor((this.y + this.h/2) / T)) === 1 ||
+        this.x < 0 || this.x + this.w > game.level.worldW) {
+      this.vx = -this.vx;
+    }
+
+    // Drop bomb toward player
+    this._shootTimer -= dt;
+    if (this._shootTimer <= 0) {
+      this._shootTimer = rnd(2.0, 4.0);
+      const oy = this.y + this.h;
+      const p  = game.player;
+      const dx = (p.x + p.w/2) - (this.x + this.w/2);
+      const vx = dx * 0.5;
+      game.projectiles.push(new EnemyBullet(this.x + this.w/2, oy, vx, ENEMY_PROJ_SPD * 0.9));
+      game.audio.shoot();
+    }
+
+    this._checkPlayerStomp(game);
+  }
+
+  render(ctx) {
+    if (this.dead) return;
+    const cx  = this.x + this.w/2;
+    const cy  = this.y + this.h/2;
+    const inv = this.invincible > 0 ? 0.5 : 1;
+
+    ctx.globalAlpha = 0.28 * inv;
+    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);
+    g.addColorStop(0, '#ffaa00'); g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = inv;
+
+    ctx.fillStyle = '#884400';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 4, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#cc7700';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
+
+    const dg = ctx.createRadialGradient(cx - 3, cy - 5, 1, cx, cy, 10);
+    dg.addColorStop(0, '#ffee88'); dg.addColorStop(1, '#ff8800');
+    ctx.fillStyle = dg;
+    ctx.beginPath(); ctx.ellipse(cx, cy - 2, 8, 8, 0, Math.PI, 0); ctx.fill();
+
+    ctx.fillStyle = '#ff2200';
+    ctx.beginPath(); ctx.arc(cx, cy + 2, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffff00';
+    ctx.beginPath(); ctx.arc(cx + 1, cy + 1, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    for (let i = -1; i <= 1; i += 2) {
+      const pulse = 0.5 + 0.5 * Math.sin(this._time * 6 + i * 1.5);
+      ctx.fillStyle = `rgba(255,180,0,${pulse})`;
+      ctx.beginPath(); ctx.arc(cx + i * 14, cy + 4, 3, 0, Math.PI * 2); ctx.fill();
     }
 
     ctx.globalAlpha = 1;

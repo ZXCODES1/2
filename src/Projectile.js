@@ -2,13 +2,13 @@ import { PROJ_SPEED, ENEMY_PROJ_SPD } from './constants.js';
 import { rectOverlap } from './utils.js';
 
 export class PlayerBolt {
-  constructor(x, y, dir) {
+  constructor(x, y, dir, vy = 0) {
     this.x   = x;
     this.y   = y;
     this.w   = 18;
     this.h   = 8;
     this.vx  = PROJ_SPEED * dir;
-    this.vy  = 0;
+    this.vy  = vy;
     this.dir = dir;
     this.dead = false;
     this._time = 0;

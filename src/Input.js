@@ -42,6 +42,7 @@ export class Input {
     this._released = {};
     this._jumpTap  = false;
     this._shootTap = false;
+    this._dashTap  = false;
     this._confirmTap = false;
   }
 
@@ -59,6 +60,7 @@ export class Input {
   shoot()       { return this.isDown('KeyZ') || this.isDown('KeyJ') || this.isDown('ControlLeft') || this.touch.shoot; }
   shootPressed(){ return this.wasPressed('KeyZ') || this.wasPressed('KeyJ') || this.wasPressed('ControlLeft') || this._shootTap; }
 
+  dash()  { return this.wasPressed('ShiftLeft') || this.wasPressed('ShiftRight') || this._dashTap; }
   pause() { return this.wasPressed('Escape') || this.wasPressed('KeyP'); }
   confirm(){ return this.wasPressed('Enter') || this.wasPressed('Space') || this.wasPressed('KeyZ') || this._jumpTap || this._shootTap || this._confirmTap; }
 }

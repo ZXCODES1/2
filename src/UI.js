@@ -56,21 +56,57 @@ export class UI {
     ctx.font = '12px monospace';
     ctx.fillText(game.level?.data.name || '', W / 2, 38);
 
-    // Active power-up
+    // Active power-ups (new multi-power system)
     const p = game.player;
-    if (p && p.activePowerUp && p.powerUpTimer > 0) {
-      ctx.textAlign = 'right';
-      const icons = { doubleJump:'✦ DOUBLE', rapidFire:'⚡ RAPID', shield:'◈ SHIELD' };
-      const label = icons[p.activePowerUp] || p.activePowerUp;
-      const frac  = p.powerUpTimer / 20;
-      ctx.fillStyle = '#ffcc00';
-      ctx.font = 'bold 13px monospace';
-      ctx.fillText(label, W - 14, 16);
-      // Timer bar
-      ctx.fillStyle = 'rgba(255,200,0,0.25)';
-      ctx.fillRect(W - 120, 24, 106, 6);
-      ctx.fillStyle = '#ffcc00';
-      ctx.fillRect(W - 120, 24, 106 * Math.min(frac, 1), 6);
+    if (p) {
+      const icons = {
+        doubleJump: { label: '✦ JUMP',   color: '#aa44ff', max: 22 },
+        rapidFire:  { label: '⚡ RAPID',  color: '#ffaa00', max: 14 },
+        shield:     { label: '◈ SHIELD', color: '#44aaff', max: 18 },
+        spread:     { label: '✷ SPREAD', color: '#00ff88', max: 16 },
+        magnet:     { label: '⊕ MAGNET', color: '#ff44ff', max: 14 },
+        speed:      { label: '▶▶ SPEED', color: '#ffee00', max: 10 },
+      };
+      let row = 0;
+      for (const [key, info] of Object.entries(icons)) {
+        if (p.power[key] > 0) {
+          const frac = Math.min(p.power[key] / info.max, 1);
+          const by = 8 + row * 18;
+          ctx.textAlign = 'right';
+          ctx.fillStyle = info.color;
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText(info.label, W - 14, by + 6);
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          ctx.fillRect(W - 86, by + 10, 72, 4);
+          ctx.fillStyle = info.color;
+          ctx.fillRect(W - 86, by + 10, 72 * frac, 4);
+          row++;
+        }
+      }
+    }
+
+    // Style rank meter
+    if (game.combo > 1 && game._comboTimer > 0) {
+      const ranks      = ['D',       'C',       'B',       'A',       'S',       'SS',      'SSS'];
+      const thresh     = [0,          2,          4,          7,         10,        15,        25];
+      const rankColors = ['#888888', '#44ff44', '#44aaff', '#aa44ff', '#ffcc00', '#ff8800', '#ff4400'];
+      let rank = 0;
+      for (let i = thresh.length - 1; i >= 0; i--) {
+        if (game.combo >= thresh[i]) { rank = i; break; }
+      }
+      ctx.save();
+      ctx.translate(W - 50, H - 60);
+      const scale = 1 + 0.15 * Math.sin(Date.now() * 0.008);
+      ctx.scale(scale, scale);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = rankColors[rank];
+      ctx.shadowColor = rankColors[rank];
+      ctx.shadowBlur = 14;
+      ctx.font = `bold ${ranks[rank].length > 1 ? 28 : 36}px monospace`;
+      ctx.fillText(ranks[rank], 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
     }
 
     // Combo multiplier
@@ -101,7 +137,7 @@ export class UI {
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('← → / A D = Move   SPACE / W = Jump   Z / J = Shoot   P = Pause', W/2, H - 18);
+      ctx.fillText('← → Move   SPACE Jump   Z Shoot   SHIFT Dash   P Pause', W/2, H - 18);
       ctx.globalAlpha = 1;
     }
   }
@@ -153,7 +189,7 @@ export class UI {
     // Controls
     ctx.fillStyle = 'rgba(150,180,220,0.7)';
     ctx.font = '13px monospace';
-    ctx.fillText('← → Move   SPACE Jump   Z Shoot   P Pause', W/2, H/2 + 90);
+    ctx.fillText('← → Move   SPACE Jump   Z Shoot   SHIFT Dash   P Pause', W/2, H/2 + 90);
 
     // Small character preview
     this._drawNovaPrev(ctx, W/2 - 200, H/2 + 20, t);
@@ -161,7 +197,7 @@ export class UI {
     // Version
     ctx.fillStyle = 'rgba(100,130,180,0.5)';
     ctx.font = '11px monospace';
-    ctx.fillText('3 LEVELS  •  BOSS FIGHT  •  POWER-UPS', W/2, H - 20);
+    ctx.fillText('3 LEVELS  •  4-PHASE BOSS  •  CHECKPOINTS  •  DASH', W/2, H - 20);
   }
 
   _drawNovaPrev(ctx, x, y, t) {

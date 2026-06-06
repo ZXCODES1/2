@@ -1,8 +1,9 @@
 import { T, TILE_SOLID, TILE_ONEWAY, TILE_SPIKE } from './constants.js';
 import { drawRoundRect } from './utils.js';
 import { Crystal, PowerUp } from './Collectible.js';
-import { Crawler, Bouncer, Shooter } from './Enemy.js';
+import { Crawler, Bouncer, Shooter, Flyer } from './Enemy.js';
 import { Boss } from './Boss.js';
+import { Checkpoint } from './Checkpoint.js';
 
 export class MovingPlatform {
   constructor(data) {
@@ -96,13 +97,15 @@ export class Level {
         case 'crawler': enemies.push(new Crawler(e.tx, e.ty)); break;
         case 'bouncer': enemies.push(new Bouncer(e.tx, e.ty)); break;
         case 'shooter': enemies.push(new Shooter(e.tx, e.ty)); break;
+        case 'flyer':   enemies.push(new Flyer(e.tx, e.ty));   break;
       }
     }
     for (const c of (data.crystals || []))  collectibles.push(new Crystal(c.tx, c.ty));
     for (const p of (data.powerUps || []))  collectibles.push(new PowerUp(p.tx, p.ty, p.type));
     if (data.boss) boss = new Boss(data.boss.tx, data.boss.ty);
 
-    return { enemies, collectibles, boss };
+    const checkpoints = (data.checkpoints || []).map((cp, i) => new Checkpoint(cp.tx, cp.ty, i));
+    return { enemies, collectibles, boss, checkpoints };
   }
 
   getTile(tx, ty) {
